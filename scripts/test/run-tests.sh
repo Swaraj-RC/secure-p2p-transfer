@@ -2,7 +2,7 @@
 set -e
 
 echo "=========================================================="
-echo "🧪 Running Test Suites"
+echo " Running Test Suites"
 echo "=========================================================="
 
 echo "Running Go Core cryptographic and protocol unit tests..."
@@ -15,4 +15,4 @@ cd backend
 npm test -- --passWithNoTests
 cd ..
 
-echo "✅ All tests passed successfully!"
+echo " All tests passed successfully!"
