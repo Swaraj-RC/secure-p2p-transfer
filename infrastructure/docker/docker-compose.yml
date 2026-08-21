@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ../../backend
+      dockerfile: ../infrastructure/docker/backend/Dockerfile
+    container_name: p2p_signaling_backend
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - NODE_ENV=production
+      - JWT_SECRET=prod_super_secret_jwt_signaling_key_2026
+      - CORS_ORIGIN=*
+    restart: unless-stopped
+    networks:
+      - p2p_mesh_network
+
+  frontend:
+    build:
+      context: ../../frontend
+      dockerfile: ../infrastructure/docker/frontend/Dockerfile
+    container_name: p2p_web_frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - p2p_mesh_network
+
+networks:
+  p2p_mesh_network:
+    driver: bridge

@@ -1,0 +1,30 @@
+{
+  "name": "secure-p2p-transfer-system",
+  "version": "1.0.0",
+  "description": "Secure Cross-Platform Decentralized Peer-to-Peer File Sharing System",
+  "private": true,
+  "scripts": {
+    "install:all": "npm install --prefix backend && npm install --prefix frontend",
+    "build:frontend": "npm run build --prefix frontend",
+    "build:backend": "npm run build --prefix backend",
+    "build": "npm run build:frontend && npm run build:backend",
+    "start": "node backend/dist/server.js",
+    "dev:backend": "npm run dev --prefix backend",
+    "dev:frontend": "npm run dev --prefix frontend",
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\""
+  },
+  "keywords": [
+    "p2p",
+    "webrtc",
+    "file-transfer",
+    "e2ee",
+    "aes-256-gcm",
+    "react",
+    "websocket"
+  ],
+  "author": "Secure P2P Team",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

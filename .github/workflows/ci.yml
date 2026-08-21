@@ -1,0 +1,62 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  test-go-core:
+    name: Go Core Tests & Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+      - name: Run Go Unit Tests
+        run: |
+          cd core
+          go test -v -race ./...
+      - name: Build Go CLI Engine Binary
+        run: |
+          cd core
+          go build -v ./cmd/engine/main.go
+
+  test-backend:
+    name: Backend Node.js Tests & Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install Dependencies
+        run: |
+          cd backend
+          npm ci
+      - name: TypeScript Build
+        run: |
+          cd backend
+          npm run build
+
+  test-frontend:
+    name: React Frontend Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install Dependencies
+        run: |
+          cd frontend
+          npm ci
+      - name: Vite Production Build
+        run: |
+          cd frontend
+          npm run build
