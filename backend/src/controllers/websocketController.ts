@@ -8,6 +8,9 @@ import { relayService } from '../services/relayService';
 import { SignalingMessage } from '../models/signaling';
 import { logger } from '../utils/logger';
 
+// STRICT ZERO-LOGS / ZERO-METADATA POLICY:
+// The server NEVER records filenames, file sizes, payload contents, or user data.
+
 export class WebSocketController {
   private wss: WebSocketServer;
 
@@ -21,7 +24,7 @@ export class WebSocketController {
       this.handleConnection(ws, req);
     });
 
-    // Inactivity heartbeat sweeper
+    // Inactivity sweeper (cleans up stale connections in memory)
     setInterval(() => {
       const removedIds = deviceService.cleanupInactiveDevices(60000);
       for (const id of removedIds) {
@@ -34,21 +37,9 @@ export class WebSocketController {
         });
       }
     }, 15000);
-
-    // Log active peer count every 30s
-    setInterval(() => {
-      const count = deviceService.getAllOnlineDevices().length;
-      if (count > 0) {
-        logger.info(`📊 Active peers in mesh: ${count}`);
-      }
-    }, 30000);
   }
 
   private handleConnection(ws: WebSocket, req: IncomingMessage): void {
-    const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '127.0.0.1';
-    logger.info(`Incoming WebSocket connection from ${ip}`);
-
-    // Parse token from query param ?token=... if provided
     const url = new URL(req.url || '', `http://${req.headers.host || 'localhost'}`);
     const token = url.searchParams.get('token');
 
@@ -64,7 +55,6 @@ export class WebSocketController {
         const currentDevice = deviceService.getDevice(authenticatedDeviceId);
         if (currentDevice) {
           currentDevice.isOnline = true;
-          // Notify other peers that device joined
           signalingService.broadcast(
             {
               type: 'DEVICE_JOINED',
@@ -75,7 +65,6 @@ export class WebSocketController {
             authenticatedDeviceId
           );
 
-          // Send current online device list to connected device
           const peers = deviceService.getAllOnlineDevices(authenticatedDeviceId);
           this.sendMessage(ws, {
             type: 'DEVICE_LIST',
@@ -83,10 +72,7 @@ export class WebSocketController {
             payload: { devices: peers },
           });
         }
-        logger.info(`WebSocket authenticated via URL token for device: [${authenticatedDeviceId}]`);
-      } catch (err: any) {
-        logger.warn(`Invalid token in WebSocket connection query: ${err.message}`);
-      }
+      } catch {}
     }
 
     ws.on('message', (rawData: WebSocket.RawData) => {
@@ -94,11 +80,10 @@ export class WebSocketController {
         const text = rawData.toString();
         const message: SignalingMessage = JSON.parse(text);
         this.processMessage(ws, message, req);
-      } catch (err: any) {
-        logger.error('Error handling WebSocket message:', err);
+      } catch {
         this.sendMessage(ws, {
           type: 'ERROR',
-          error: 'Malformed JSON message',
+          error: 'Malformed message',
           timestamp: Date.now(),
         });
       }
@@ -108,7 +93,6 @@ export class WebSocketController {
       const deviceId = sessionService.removeSessionByWs(ws);
       if (deviceId) {
         const device = deviceService.setDeviceOffline(deviceId);
-        logger.info(`WebSocket closed for device [${deviceId}]`);
         signalingService.broadcast({
           type: 'DEVICE_LEFT',
           senderId: deviceId,
@@ -118,9 +102,7 @@ export class WebSocketController {
       }
     });
 
-    ws.on('error', (err) => {
-      logger.error('WebSocket client error:', err);
-    });
+    ws.on('error', () => {});
   }
 
   private processMessage(ws: WebSocket, message: SignalingMessage, req: IncomingMessage): void {
@@ -128,13 +110,12 @@ export class WebSocketController {
 
     switch (message.type) {
       case 'REGISTER': {
-        const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '127.0.0.1';
         const userAgent = req.headers['user-agent'] || 'Unknown';
         const dto = message.payload || { name: 'Anonymous Peer' };
 
-        const device = deviceService.registerDevice(dto, ip, message.senderId);
+        const device = deviceService.registerDevice(dto, '0.0.0.0', message.senderId);
         const { token, sessionId } = authService.generateToken(device);
-        sessionService.createSession(sessionId, device.id, token, ip, userAgent, ws);
+        sessionService.createSession(sessionId, device.id, token, '0.0.0.0', userAgent, ws);
 
         this.sendMessage(ws, {
           type: 'REGISTER',
@@ -143,7 +124,7 @@ export class WebSocketController {
           payload: { device, token, sessionId },
         });
 
-        // Broadcast to existing peers
+        // Broadcast presence
         signalingService.broadcast(
           {
             type: 'DEVICE_JOINED',
@@ -154,15 +135,13 @@ export class WebSocketController {
           device.id
         );
 
-        // Send existing peers to this newly registered peer
+        // Send online peer list
         const peers = deviceService.getAllOnlineDevices(device.id);
         this.sendMessage(ws, {
           type: 'DEVICE_LIST',
           timestamp: Date.now(),
           payload: { devices: peers },
         });
-
-        logger.info(`✅ Device registered: [${device.id}] "${device.name}" from ${ip} — ${peers.length} peers online`);
         break;
       }
 
@@ -200,12 +179,13 @@ export class WebSocketController {
         if (!message.targetId) {
           this.sendMessage(ws, {
             type: 'ERROR',
-            error: 'Target device ID is required for peer signaling',
+            error: 'Target device ID is required',
             timestamp: Date.now(),
           });
           return;
         }
 
+        // Blind forwarding without logging file names, sizes, or metadata
         const forwarded = signalingService.sendToDevice(message.targetId, {
           ...message,
           senderId,
@@ -215,13 +195,9 @@ export class WebSocketController {
         if (!forwarded) {
           this.sendMessage(ws, {
             type: 'ERROR',
-            error: `Target peer ${message.targetId} is offline or unreachable`,
+            error: 'Target peer is offline or unreachable',
             timestamp: Date.now(),
           });
-        } else if (message.type === 'TRANSFER_REQUEST') {
-          logger.info(`📨 Transfer request from [${senderId}] → [${message.targetId}]: "${message.payload?.fileName}" (${((message.payload?.fileSize || 0) / (1024 * 1024)).toFixed(2)} MB)`);
-        } else if (message.type === 'TRANSFER_COMPLETE') {
-          logger.info(`✅ Transfer complete from [${senderId}] → [${message.targetId}]`);
         }
         break;
       }
@@ -230,18 +206,18 @@ export class WebSocketController {
         if (!senderId || !message.targetId || !message.payload) {
           this.sendMessage(ws, {
             type: 'ERROR',
-            error: 'Missing senderId, targetId, or payload for relay data',
+            error: 'Invalid relay packet',
             timestamp: Date.now(),
           });
           return;
         }
 
+        // Blind stream forwarding
         relayService.relayChunk(senderId, message.targetId, message.payload);
         break;
       }
 
       default:
-        logger.warn(`Unknown signaling message type: ${(message as any).type}`);
         break;
     }
   }

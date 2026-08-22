@@ -1,16 +1,18 @@
 services:
   - type: web
-    name: secure-p2p-transfer
+    name: slrv-beam-signaling
     env: node
     plan: free
-    buildCommand: npm run install:all && npm run build
-    startCommand: npm start
+    buildCommand: npm install --prefix backend && npm run build --prefix backend
+    startCommand: node backend/dist/server.js
+    healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
         value: production
       - key: PORT
         value: 8080
-      - key: JWT_SECRET
-        generateValue: true
       - key: CORS_ORIGIN
         value: "*"
+      - key: JWT_SECRET
+        generateValue: true
+

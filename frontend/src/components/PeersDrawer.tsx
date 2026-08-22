@@ -85,10 +85,11 @@ export const PeersDrawer: React.FC<PeersDrawerProps> = ({
                       {peer.name}
                     </div>
                     <div style={{ color: 'var(--hud-text-dim)', fontSize: '0.7rem' }}>
-                      ID: {peer.id} • IP: {peer.ipAddress}
+                      PAIRING CODE: #{peer.id.slice(0, 6).toUpperCase()} • {peer.platform || peer.type.toUpperCase()}
                     </div>
                   </div>
                 </div>
+
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--hud-green)', fontSize: '0.75rem' }}>
                   <Signal size={14} />

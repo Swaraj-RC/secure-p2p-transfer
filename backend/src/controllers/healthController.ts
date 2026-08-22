@@ -6,7 +6,7 @@ export class HealthController {
     const devices = deviceService.getAllOnlineDevices();
     res.status(200).json({
       status: 'UP',
-      service: 'Secure P2P Signaling Server',
+      service: 'SLRV BEAM Signaling Server (Swaraj, Laxmikant, Rahul, Vaibhav)',
       version: '1.0.0',
       uptimeSeconds: process.uptime(),
       activePeers: devices.length,

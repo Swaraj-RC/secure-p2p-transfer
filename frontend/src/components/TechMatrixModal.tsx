@@ -41,9 +41,9 @@ export const TechMatrixModal: React.FC<TechMatrixModalProps> = ({ isOpen, onClos
           }}
         >
           <div style={{ fontWeight: 700, color: 'var(--hud-orange)', letterSpacing: '0.1em', marginBottom: '0.25rem' }}>
-            🏆 WHY OUR PLATFORM OUTPERFORMS LEGACY ALTERNATIVES:
+            🏆 WHY SLRV BEAM OUTPERFORMS LEGACY ALTERNATIVES:
           </div>
-          Legacy apps (WhatsApp, AirDrop, LocalSend, SendAnywhere) suffer from severe limitations: aggressive compression, ecosystem lock-in, mandatory app store installs, or centralized server bottlenecks. Our system delivers <strong>100% bit-for-bit lossless transfers</strong>, zero-install universal browser compatibility, and next-gen acoustic/WebRTC mesh modes with $0 maintenance cost.
+          Legacy apps (WhatsApp, AirDrop, LocalSend, SendAnywhere) suffer from severe limitations: aggressive compression, ecosystem lock-in, mandatory app store installs, or centralized server bottlenecks. <strong>SLRV BEAM</strong> (engineered by Swaraj, Laxmikant, Rahul, and Vaibhav) delivers <strong>100% bit-for-bit lossless transfers</strong>, zero-install universal browser compatibility, and next-gen acoustic/WebRTC mesh modes with $0 maintenance cost.
         </div>
 
         {/* Feature Comparison Matrix Table */}
@@ -52,7 +52,7 @@ export const TechMatrixModal: React.FC<TechMatrixModalProps> = ({ isOpen, onClos
             <thead>
               <tr style={{ background: 'rgba(255, 107, 0, 0.15)', borderBottom: '1px solid var(--hud-orange)', color: 'var(--hud-orange)' }}>
                 <th style={{ padding: '0.75rem 0.5rem' }}>CAPABILITY</th>
-                <th style={{ padding: '0.75rem 0.5rem', color: '#00ff88', fontWeight: 700 }}>OUR P2P SYSTEM</th>
+                <th style={{ padding: '0.75rem 0.5rem', color: '#00ff88', fontWeight: 700 }}>SLRV BEAM</th>
                 <th style={{ padding: '0.75rem 0.5rem' }}>WHATSAPP / TELEGRAM</th>
                 <th style={{ padding: '0.75rem 0.5rem' }}>LOCALSEND</th>
                 <th style={{ padding: '0.75rem 0.5rem' }}>AIRDROP</th>

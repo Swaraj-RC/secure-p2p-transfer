@@ -1,5 +1,5 @@
 import React from 'react';
-import { Volume2, VolumeX, ShieldCheck, History, Users, Award } from 'lucide-react';
+import { Volume2, VolumeX, ShieldCheck, History, Users, Award, Server } from 'lucide-react';
 import { soundFX } from '../services/sound';
 
 interface HeaderNavProps {
@@ -8,7 +8,9 @@ interface HeaderNavProps {
   onOpenHistory: () => void;
   onOpenPeers: () => void;
   onOpenMatrix: () => void;
+  onOpenServerConfig?: () => void;
   peerCount: number;
+  isConnected: boolean;
 }
 
 export const HeaderNav: React.FC<HeaderNavProps> = ({
@@ -17,7 +19,9 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
   onOpenHistory,
   onOpenPeers,
   onOpenMatrix,
+  onOpenServerConfig,
   peerCount,
+  isConnected,
 }) => {
   return (
     <header className="hud-header">
@@ -25,21 +29,48 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
       <div className="hud-header-left">
         <span style={{ color: 'rgba(255,107,0,0.5)' }}>┌</span>
         <span className="hud-dot" />
-        <span style={{ fontWeight: 700 }}>P2P TRANSFER</span>
+        <span style={{ fontWeight: 700, letterSpacing: '0.1em', color: 'var(--hud-orange)' }}>SLRV // BEAM</span>
         <span style={{ color: 'rgba(255,107,0,0.5)' }}>| ┐</span>
       </div>
 
       {/* Top Center Core Attributes */}
       <div className="hud-header-center">
-        <span>DECENTRALIZED</span>
+        <span>SWARAJ</span>
         <span className="hud-dot" />
-        <span>END-TO-END</span>
+        <span>LAXMIKANT</span>
         <span className="hud-dot" />
-        <span>ENCRYPTED</span>
+        <span>RAHUL</span>
+        <span className="hud-dot" />
+        <span>VAIBHAV</span>
       </div>
 
       {/* Top Right Controls */}
-      <div className="hud-header-right" style={{ gap: '1rem' }}>
+      <div className="hud-header-right" style={{ gap: '0.75rem' }}>
+        {onOpenServerConfig && (
+          <button
+            onClick={() => {
+              soundFX.playClick();
+              onOpenServerConfig();
+            }}
+            style={{
+              background: isConnected ? 'rgba(0, 255, 136, 0.08)' : 'rgba(255, 107, 0, 0.15)',
+              border: isConnected ? '1px solid rgba(0, 255, 136, 0.4)' : '1px solid var(--hud-orange)',
+              color: isConnected ? '#00ff88' : 'var(--hud-orange)',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.35rem',
+              fontSize: '0.72rem',
+              fontFamily: 'inherit',
+              fontWeight: 600,
+              padding: '0.25rem 0.55rem',
+            }}
+            title="Configure Signaling Server URL (Render / Localhost)"
+          >
+            <Server size={13} />
+            <span>SERVER {isConnected ? '●' : '○'}</span>
+          </button>
+        )}
         <button
           onClick={() => {
             soundFX.playClick();

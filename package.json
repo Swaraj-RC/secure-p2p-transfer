@@ -1,7 +1,7 @@
 {
-  "name": "secure-p2p-transfer-system",
+  "name": "slrv-protocol",
   "version": "1.0.0",
-  "description": "Secure Cross-Platform Decentralized Peer-to-Peer File Sharing System",
+  "description": "SLRV Protocol: High-Speed Decentralized P2P File Transfer Mesh (Swaraj, Laxmikant, Rahul, Vaibhav)",
   "private": true,
   "scripts": {
     "install:all": "npm install --prefix backend && npm install --prefix frontend",
@@ -14,6 +14,7 @@
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\""
   },
   "keywords": [
+    "slrv",
     "p2p",
     "webrtc",
     "file-transfer",
@@ -22,7 +23,7 @@
     "react",
     "websocket"
   ],
-  "author": "Secure P2P Team",
+  "author": "Swaraj, Laxmikant, Rahul, Vaibhav",
   "license": "MIT",
   "devDependencies": {
     "concurrently": "^8.2.2"

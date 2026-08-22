@@ -13,9 +13,27 @@ export class SignalingClient {
   private onConnectionChangeCallback?: (connected: boolean) => void;
 
   constructor(url?: string) {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const defaultProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host;
-    this.url = url || `${protocol}//${host}/ws`;
+    const envUrl = (import.meta as any).env?.VITE_SIGNALING_SERVER_URL;
+    const storedUrl = typeof window !== 'undefined' ? localStorage.getItem('SLRV_SIGNALING_URL') : null;
+
+    this.url = url || storedUrl || envUrl || `${defaultProtocol}//${host}/ws`;
+  }
+
+  public getUrl(): string {
+    return this.url;
+  }
+
+  public setUrl(newUrl: string) {
+    if (this.url !== newUrl) {
+      this.url = newUrl;
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('SLRV_SIGNALING_URL', newUrl);
+      }
+      this.disconnect();
+      this.connect();
+    }
   }
 
   public connect(deviceName?: string, onStatus?: (connected: boolean) => void) {

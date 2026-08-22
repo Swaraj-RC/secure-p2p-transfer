@@ -1,4 +1,6 @@
-# Secure Cross-Platform Decentralized File Sharing System
+# ⚡ SLRV BEAM: Quantum Peer-to-Peer File Transfer Mesh
+
+**Engineered with pride by Swaraj, Laxmikant, Rahul, and Vaibhav**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go)](https://golang.org)
@@ -6,7 +8,7 @@
 [![React](https://img.shields.io/badge/React-18+-61DAFB?logo=react)](https://reactjs.org)
 [![Security: AES--256--GCM](https://img.shields.io/badge/Security-AES--256--GCM-red)](SECURITY.md)
 
-A high-performance, cross-platform, decentralized peer-to-peer file sharing ecosystem engineered with zero central file storage, end-to-end AES-256-GCM encryption, real-time WebSocket signaling, WebRTC P2P direct data channels, and a high-throughput Go transfer engine.
+**SLRV BEAM** is a high-speed, zero-cloud, cross-platform decentralized peer-to-peer file beaming system engineered with zero central storage, bit-for-bit lossless transfers, WebCrypto AES-256-GCM encryption, WebSockets signaling, and direct WebRTC SCTP data channels.
 
 ---
 

@@ -134,7 +134,7 @@ export const SendModal: React.FC<SendModalProps> = ({
               }}
             >
               <Terminal size={15} />
-              <span>TYPE IP ADDRESS / PEER ID</span>
+              <span>PAIRING CODE / NODE ID</span>
             </button>
             <button
               className={`hud-tab-btn ${targetMode === 'detected' ? 'active' : ''}`}
@@ -148,7 +148,7 @@ export const SendModal: React.FC<SendModalProps> = ({
             </button>
           </div>
 
-          {/* Mode A: Direct IP / Peer Address Input */}
+          {/* Mode A: Direct Pairing Code / Node ID Input */}
           {targetMode === 'direct' && (
             <div style={{ marginTop: '0.75rem' }}>
               <div className="hud-input-group">
@@ -157,21 +157,21 @@ export const SendModal: React.FC<SendModalProps> = ({
                   className="hud-input"
                   value={customIpAddress}
                   onChange={(e) => setCustomIpAddress(e.target.value)}
-                  placeholder="Enter Target IP (e.g. 192.168.1.14, 127.0.0.1, or Peer ID)"
+                  placeholder="Enter 6-Digit Pairing Code (e.g. #8518) or Node Name"
                   autoFocus
                 />
               </div>
               <div style={{ fontSize: '0.7rem', color: 'var(--hud-text-dim)', marginTop: '0.4rem', display: 'flex', justifyContent: 'space-between' }}>
-                <span>🎯 DIRECT ROUTING: Transmits directly to recipient device by IP or Peer ID</span>
+                <span>🎯 DIRECT ROUTING: Privacy-first end-to-end encrypted transfer</span>
                 {peers.length > 0 && (
                   <span
                     style={{ color: 'var(--hud-orange)', cursor: 'pointer', textDecoration: 'underline' }}
                     onClick={() => {
-                      setCustomIpAddress(peers[0].ipAddress || peers[0].id);
+                      setCustomIpAddress(peers[0].id.slice(0, 6));
                       soundFX.playClick();
                     }}
                   >
-                    Quick-fill: {peers[0].name} ({peers[0].ipAddress || peers[0].id.slice(0, 8)})
+                    Quick-fill: {peers[0].name} (#{peers[0].id.slice(0, 6).toUpperCase()})
                   </span>
                 )}
               </div>
@@ -192,7 +192,7 @@ export const SendModal: React.FC<SendModalProps> = ({
                     fontSize: '0.8rem',
                   }}
                 >
-                  NO PEER NODES CURRENTLY DETECTED ON MESH. USE DIRECT IP ADDRESS MODE OR OPEN ANOTHER TAB.
+                  NO PEER NODES CURRENTLY DETECTED ON MESH. USE PAIRING CODE MODE OR SHARE THE LINK.
                 </div>
               ) : (
                 <div className="hud-peer-grid">
@@ -219,7 +219,7 @@ export const SendModal: React.FC<SendModalProps> = ({
                             {peer.name}
                           </div>
                           <div style={{ color: 'var(--hud-text-dim)', fontSize: '0.7rem' }}>
-                            IP: {peer.ipAddress || 'LAN'} • ID: {peer.id.slice(0, 8)}...
+                            CODE: #{peer.id.slice(0, 6).toUpperCase()} • {peer.type.toUpperCase()}
                           </div>
                         </div>
                       </div>
@@ -229,6 +229,7 @@ export const SendModal: React.FC<SendModalProps> = ({
               )}
             </div>
           )}
+
         </div>
 
         {/* 3. Security Checksum Banner & Action */}

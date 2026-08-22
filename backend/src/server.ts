@@ -27,7 +27,8 @@ new WebSocketController(wss);
 
 server.listen(config.port, config.host, () => {
   logger.info(`=======================================================`);
-  logger.info(`🚀 Secure P2P Signaling Server running on ${config.host}:${config.port}`);
+  logger.info(`⚡ SLRV BEAM Signaling Server running on ${config.host}:${config.port}`);
+  logger.info(`👥 Engineered by: Swaraj, Laxmikant, Rahul, Vaibhav`);
   logger.info(`📡 HTTP Endpoint: http://${config.host}:${config.port}/api`);
   logger.info(`⚡ WebSocket Endpoint: ws://${config.host}:${config.port}/ws`);
   logger.info(`🔒 Environment: ${config.nodeEnv}`);

@@ -54,8 +54,9 @@ export const ActiveTransferHUD: React.FC<ActiveTransferHUDProps> = ({
               {transfer.fileName}
             </div>
             <div style={{ color: 'var(--hud-text-dim)', fontSize: '0.8rem', marginTop: '0.2rem' }}>
-              TARGET NODE: {transfer.peerName || transfer.peerId.slice(0, 10)}
+              TARGET NODE: {transfer.peerName.startsWith('IP:') ? `Node-${transfer.peerId.slice(0, 6).toUpperCase()}` : transfer.peerName || `Node-${transfer.peerId.slice(0, 6)}`}
             </div>
+
           </div>
           <div style={{ textAlign: 'right' }}>
             <div style={{ color: 'var(--hud-orange)', fontSize: '1.25rem', fontWeight: 700 }}>

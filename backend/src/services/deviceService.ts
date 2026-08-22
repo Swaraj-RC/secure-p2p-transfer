@@ -30,9 +30,9 @@ export class DeviceService {
     };
 
     this.devices.set(id, device);
-    logger.info(`Device registered: [${device.id}] "${device.name}" (${device.type}) from ${ipAddress}`);
     return device;
   }
+
 
   public getDevice(id: string): Device | undefined {
     return this.devices.get(id);
