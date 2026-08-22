@@ -14,12 +14,12 @@ const RTC_CONFIG: RTCConfiguration = {
   iceCandidatePoolSize: 10,
 };
 
-// MAXIMUM HARDWARE LINE-RATE SPEED CONFIG (Hyperspeed 256KB Pipelined SCTP Pump)
-const CHUNK_SIZE = 256 * 1024;        // 256 KB optimal SCTP packet size (zero fragmentation, 2x throughput)
-const HIGH_WATERMARK = 16 * 1024 * 1024; // 16 MB socket window
-const LOW_WATERMARK = 2 * 1024 * 1024;   // 2 MB trigger watermark
-const PARALLEL_STREAMS = 8;             // 8 Parallel SCTP DataChannels
-const PIPELINE_DEPTH = 16;              // 16 Chunks Pre-Encrypted in Memory Ahead of Socket
+// MAXIMUM HARDWARE LINE-RATE SPEED CONFIG (Ultra-Fast 64KB Pipelined SCTP Pump)
+const CHUNK_SIZE = 64 * 1024;         // 64 KB universal WebRTC SCTP packet size (100% browser compliant)
+const HIGH_WATERMARK = 8 * 1024 * 1024; // 8 MB socket window
+const LOW_WATERMARK = 1024 * 1024;     // 1 MB trigger watermark
+const PARALLEL_STREAMS = 4;           // 4 Parallel SCTP DataChannels
+const PIPELINE_DEPTH = 32;            // 32 Chunks Pre-Encrypted in Memory Ahead of Socket
 
 export class WebRTCManager {
   private peerConnections: Map<string, RTCPeerConnection> = new Map();
