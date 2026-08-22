@@ -9,7 +9,6 @@ import { ActiveTransferHUD } from './components/ActiveTransferHUD';
 import { PeersDrawer } from './components/PeersDrawer';
 import { HistoryDrawer } from './components/HistoryDrawer';
 import { TechMatrixModal } from './components/TechMatrixModal';
-import { ServerConfigModal } from './components/ServerConfigModal';
 import { signalingClient } from './services/signaling';
 
 import { webrtcManager, WebRTCManager } from './services/webrtc';
@@ -39,7 +38,6 @@ export const App: React.FC = () => {
   const [isPeersOpen, setIsPeersOpen] = useState<boolean>(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState<boolean>(false);
   const [isMatrixOpen, setIsMatrixOpen] = useState<boolean>(false);
-  const [isServerConfigOpen, setIsServerConfigOpen] = useState<boolean>(false);
 
 
   // Transfers
@@ -418,9 +416,7 @@ export const App: React.FC = () => {
         onOpenHistory={() => setIsHistoryOpen(true)}
         onOpenPeers={() => setIsPeersOpen(true)}
         onOpenMatrix={() => setIsMatrixOpen(true)}
-        onOpenServerConfig={() => setIsServerConfigOpen(true)}
         peerCount={peers.length}
-        isConnected={isConnected}
       />
 
 
@@ -490,15 +486,8 @@ export const App: React.FC = () => {
         onClose={() => setIsHistoryOpen(false)}
         history={transferHistory}
       />
-
-      <ServerConfigModal
-        isOpen={isServerConfigOpen}
-        onClose={() => setIsServerConfigOpen(false)}
-        isConnected={isConnected}
-      />
     </div>
   );
 };
-
 
 export default App;
