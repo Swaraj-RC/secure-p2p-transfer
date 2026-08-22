@@ -25,7 +25,7 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
       <div className="hud-header-left">
         <span style={{ color: 'rgba(255,107,0,0.5)' }}>┌</span>
         <span className="hud-dot" />
-        <span style={{ fontWeight: 700 }}>P2P TRANSFER</span>
+        <span style={{ fontWeight: 700, letterSpacing: '0.08em', color: 'var(--hud-orange)' }}>SLRV // BEAM</span>
         <span style={{ color: 'rgba(255,107,0,0.5)' }}>| ┐</span>
       </div>
 
