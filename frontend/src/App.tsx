@@ -98,7 +98,9 @@ export const App: React.FC = () => {
     });
 
     // 3A. Incoming Direct WebRTC Binary SCTP Chunk Stream (MAX Line Speed)
-    webrtcManager.setBinaryChunkListener('*', async (chunkIndex, _totalChunks, encryptedData) => {
+    let lastReceiverUiUpdate = 0;
+
+    webrtcManager.setBinaryChunkListener('*', async (chunkIndex, totalChunks, encryptedData) => {
       for (const [tId, session] of receivingBuffers.current.entries()) {
         try {
           const decryptedChunk = await WebCryptoEngine.decryptChunk(session.key, encryptedData);
@@ -107,23 +109,27 @@ export const App: React.FC = () => {
             session.receivedBytes += decryptedChunk.byteLength;
             session.receivedCount++;
 
-            const elapsedSec = (Date.now() - session.startTime) / 1000;
-            const speedMBps = elapsedSec > 0 ? session.receivedBytes / (1024 * 1024) / elapsedSec : 0;
-            const progress = Math.min(100, Math.round((session.receivedBytes / session.meta.fileSize) * 100));
-            const remainingBytes = session.meta.fileSize - session.receivedBytes;
-            const etaSeconds = speedMBps > 0 ? remainingBytes / (speedMBps * 1024 * 1024) : 0;
+            const now = Date.now();
+            if (now - lastReceiverUiUpdate > 33 || session.receivedCount === totalChunks) {
+              lastReceiverUiUpdate = now;
+              const elapsedSec = (now - session.startTime) / 1000;
+              const speedMBps = elapsedSec > 0 ? (session.receivedBytes / (1024 * 1024)) / elapsedSec : 0;
+              const progress = Math.min(100, Math.round((session.receivedBytes / session.meta.fileSize) * 100));
+              const remainingBytes = session.meta.fileSize - session.receivedBytes;
+              const etaSeconds = speedMBps > 0 ? remainingBytes / (speedMBps * 1024 * 1024) : 0;
 
-            setActiveTransfer((prev) => {
-              if (!prev || prev.id !== tId) return prev;
-              return {
-                ...prev,
-                progress,
-                bytesTransferred: session.receivedBytes,
-                speedMBps,
-                etaSeconds,
-                chunksCompleted: session.receivedCount,
-              };
-            });
+              setActiveTransfer((prev) => {
+                if (!prev || prev.id !== tId) return prev;
+                return {
+                  ...prev,
+                  progress,
+                  bytesTransferred: session.receivedBytes,
+                  speedMBps,
+                  etaSeconds,
+                  chunksCompleted: session.receivedCount,
+                };
+              });
+            }
           }
         } catch (err) {
           console.error('Binary chunk decrypt error:', err);
@@ -140,33 +146,35 @@ export const App: React.FC = () => {
       if (!session) return;
 
       try {
-        // Decode base64 safely and decrypt with AES-256-GCM
         const rawEncrypted = await base64ToArrayBuffer(data);
         const decryptedChunk = await WebCryptoEngine.decryptChunk(session.key, rawEncrypted);
-
 
         if (!session.chunks[chunkIndex]) {
           session.chunks[chunkIndex] = decryptedChunk;
           session.receivedBytes += decryptedChunk.byteLength;
           session.receivedCount++;
 
-          const elapsedSec = (Date.now() - session.startTime) / 1000;
-          const speedMBps = elapsedSec > 0 ? session.receivedBytes / (1024 * 1024) / elapsedSec : 0;
-          const progress = Math.min(100, Math.round((session.receivedBytes / session.meta.fileSize) * 100));
-          const remainingBytes = session.meta.fileSize - session.receivedBytes;
-          const etaSeconds = speedMBps > 0 ? remainingBytes / (speedMBps * 1024 * 1024) : 0;
+          const now = Date.now();
+          if (now - lastReceiverUiUpdate > 33 || session.receivedCount === totalChunks) {
+            lastReceiverUiUpdate = now;
+            const elapsedSec = (now - session.startTime) / 1000;
+            const speedMBps = elapsedSec > 0 ? (session.receivedBytes / (1024 * 1024)) / elapsedSec : 0;
+            const progress = Math.min(100, Math.round((session.receivedBytes / session.meta.fileSize) * 100));
+            const remainingBytes = session.meta.fileSize - session.receivedBytes;
+            const etaSeconds = speedMBps > 0 ? remainingBytes / (speedMBps * 1024 * 1024) : 0;
 
-          setActiveTransfer((prev) => {
-            if (!prev || prev.id !== transferId) return prev;
-            return {
-              ...prev,
-              progress,
-              bytesTransferred: session.receivedBytes,
-              speedMBps,
-              etaSeconds,
-              chunksCompleted: session.receivedCount,
-            };
-          });
+            setActiveTransfer((prev) => {
+              if (!prev || prev.id !== transferId) return prev;
+              return {
+                ...prev,
+                progress,
+                bytesTransferred: session.receivedBytes,
+                speedMBps,
+                etaSeconds,
+                chunksCompleted: session.receivedCount,
+              };
+            });
+          }
         }
       } catch (err) {
         console.error('Error decrypting chunk #', chunkIndex, err);
