@@ -15,10 +15,12 @@ export class SignalingClient {
   constructor(url?: string) {
     const defaultProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host;
+    const isVercel = typeof window !== 'undefined' && window.location.host.includes('vercel.app');
+    const defaultRenderUrl = 'wss://slrv-beam-signaling.onrender.com/ws';
     const envUrl = (import.meta as any).env?.VITE_SIGNALING_SERVER_URL;
     const storedUrl = typeof window !== 'undefined' ? localStorage.getItem('SLRV_SIGNALING_URL') : null;
 
-    this.url = url || storedUrl || envUrl || `${defaultProtocol}//${host}/ws`;
+    this.url = url || storedUrl || envUrl || (isVercel ? defaultRenderUrl : `${defaultProtocol}//${host}/ws`);
   }
 
   public getUrl(): string {
