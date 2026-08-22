@@ -3,16 +3,16 @@ services:
     name: slrv-beam-signaling
     env: node
     plan: free
-    buildCommand: npm install --prefix backend && npm run build --prefix backend
-    startCommand: node backend/dist/server.js
+    rootDir: backend
+    buildCommand: npm install && npm run build
+    startCommand: npm start
     healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
         value: production
-      - key: PORT
-        value: 8080
       - key: CORS_ORIGIN
         value: "*"
       - key: JWT_SECRET
         generateValue: true
+
 
