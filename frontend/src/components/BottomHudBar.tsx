@@ -65,9 +65,9 @@ export const BottomHudBar: React.FC<BottomHudBarProps> = ({
 
       {/* Version Item */}
       <div className="hud-bar-item" style={{ textAlign: 'right' }}>
-        <span className="hud-bar-label">ENGINE</span>
+        <span className="hud-bar-label">VERSION</span>
         <span className="hud-bar-val">
-          SLRV BEAM v1.0
+          1.0.0
         </span>
       </div>
     </footer>

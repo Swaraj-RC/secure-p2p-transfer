@@ -25,23 +25,21 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
       <div className="hud-header-left">
         <span style={{ color: 'rgba(255,107,0,0.5)' }}>┌</span>
         <span className="hud-dot" />
-        <span style={{ fontWeight: 700, letterSpacing: '0.1em', color: 'var(--hud-orange)' }}>SLRV // BEAM</span>
+        <span style={{ fontWeight: 700 }}>P2P TRANSFER</span>
         <span style={{ color: 'rgba(255,107,0,0.5)' }}>| ┐</span>
       </div>
 
       {/* Top Center Core Attributes */}
       <div className="hud-header-center">
-        <span>SWARAJ</span>
+        <span>DECENTRALIZED</span>
         <span className="hud-dot" />
-        <span>LAXMIKANT</span>
+        <span>END-TO-END</span>
         <span className="hud-dot" />
-        <span>RAHUL</span>
-        <span className="hud-dot" />
-        <span>VAIBHAV</span>
+        <span>ENCRYPTED</span>
       </div>
 
       {/* Top Right Controls */}
-      <div className="hud-header-right" style={{ gap: '0.75rem' }}>
+      <div className="hud-header-right" style={{ gap: '1rem' }}>
         <button
           onClick={() => {
             soundFX.playClick();

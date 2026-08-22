@@ -52,10 +52,10 @@ export const HeroHome: React.FC<HeroHomeProps> = ({
           +
         </div>
 
-        {/* High-Precision Stylized Stencil Vector Logo for SLRV */}
+        {/* High-Precision Stylized Stencil Vector Logo */}
         <svg
           className="hud-logo-svg"
-          viewBox="0 0 540 160"
+          viewBox="0 0 540 180"
           fill="none"
           xmlns="http://www.w3.org/2000/svg"
         >
@@ -70,77 +70,107 @@ export const HeroHome: React.FC<HeroHomeProps> = ({
               <stop offset="40%" stopColor="#FF6B00" />
               <stop offset="100%" stopColor="#D94E00" />
             </linearGradient>
+
+            <linearGradient id="p2p-highlight" x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.6" />
+              <stop offset="15%" stopColor="#FFFFFF" stopOpacity="0" />
+            </linearGradient>
           </defs>
 
           <g filter="url(#p2p-glow)">
-            {/* 'S' GLYPH */}
+            {/* FIRST 'P' */}
             <path
-              d="M 115 20 
-                 L 35 20 
-                 L 15 45 
-                 L 15 75 
-                 L 95 85 
-                 L 115 95 
-                 L 115 130 
-                 L 35 140 
-                 L 15 115
-                 M 115 45
-                 L 45 45
-                 M 95 115
-                 L 15 115"
-              stroke="url(#p2p-gradient)"
-              strokeWidth="22"
+              d="M 20 20 
+                 L 115 20 
+                 L 145 50 
+                 L 145 95 
+                 L 115 125 
+                 L 55 125 
+                 L 55 160 
+                 L 20 160 
+                 Z 
+                 M 55 52 
+                 L 105 52 
+                 L 115 62 
+                 L 115 85 
+                 L 105 95 
+                 L 55 95 
+                 Z"
+              fill="url(#p2p-gradient)"
+              stroke="#FFA048"
+              strokeWidth="2"
+            />
+            <path
+              d="M 20 20 L 115 20 L 145 50"
+              stroke="#FFF"
+              strokeWidth="1.5"
               strokeLinecap="round"
-              strokeLinejoin="round"
-              fill="none"
+              opacity="0.8"
             />
 
-            {/* 'L' GLYPH */}
+            {/* DIGIT '2' */}
             <path
-              d="M 160 20 
-                 L 160 140 
-                 L 245 140"
-              stroke="url(#p2p-gradient)"
-              strokeWidth="22"
+              d="M 185 20 
+                 L 285 20 
+                 L 315 50 
+                 L 315 90 
+                 L 230 130 
+                 L 315 130 
+                 L 315 160 
+                 L 185 160 
+                 L 185 130 
+                 L 270 90 
+                 L 270 52 
+                 L 205 52 
+                 L 185 32 
+                 Z"
+              fill="url(#p2p-gradient)"
+              stroke="#FFA048"
+              strokeWidth="2"
+            />
+            <path
+              d="M 185 20 L 285 20 L 315 50"
+              stroke="#FFF"
+              strokeWidth="1.5"
               strokeLinecap="round"
-              strokeLinejoin="round"
-              fill="none"
+              opacity="0.8"
             />
 
-            {/* 'R' GLYPH */}
+            {/* SECOND 'P' */}
             <path
-              d="M 290 140 
-                 L 290 20 
-                 L 355 20 
-                 C 385 20, 385 75, 355 75 
-                 L 290 75 
-                 M 340 75 
-                 L 380 140"
-              stroke="url(#p2p-gradient)"
-              strokeWidth="22"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              fill="none"
+              d="M 355 20 
+                 L 450 20 
+                 L 480 50 
+                 L 480 95 
+                 L 450 125 
+                 L 390 125 
+                 L 390 160 
+                 L 355 160 
+                 Z 
+                 M 390 52 
+                 L 440 52 
+                 L 450 62 
+                 L 450 85 
+                 L 440 95 
+                 L 390 95 
+                 Z"
+              fill="url(#p2p-gradient)"
+              stroke="#FFA048"
+              strokeWidth="2"
             />
-
-            {/* 'V' GLYPH */}
             <path
-              d="M 420 20 
-                 L 468 140 
-                 L 516 20"
-              stroke="url(#p2p-gradient)"
-              strokeWidth="22"
+              d="M 355 20 L 450 20 L 480 50"
+              stroke="#FFF"
+              strokeWidth="1.5"
               strokeLinecap="round"
-              strokeLinejoin="round"
-              fill="none"
+              opacity="0.8"
             />
           </g>
 
           {/* Stencil Inner Inset Details */}
-          <line x1="15" y1="80" x2="35" y2="80" stroke="#FFF" strokeWidth="2" opacity="0.9" />
-          <line x1="160" y1="80" x2="180" y2="80" stroke="#FFF" strokeWidth="2" opacity="0.9" />
-          <line x1="290" y1="80" x2="310" y2="80" stroke="#FFF" strokeWidth="2" opacity="0.9" />
-          <line x1="458" y1="110" x2="478" y2="110" stroke="#FFF" strokeWidth="2" opacity="0.9" />
+          <line x1="20" y1="90" x2="35" y2="90" stroke="#FF6B00" strokeWidth="3" />
+          <line x1="185" y1="90" x2="200" y2="90" stroke="#FF6B00" strokeWidth="3" />
+          <line x1="355" y1="90" x2="370" y2="90" stroke="#FF6B00" strokeWidth="3" />
         </svg>
 
         {/* Cyberpunk Crosshair Corner Accent Lines */}
@@ -152,43 +182,15 @@ export const HeroHome: React.FC<HeroHomeProps> = ({
 
       {/* Subtitles & Mission Tags */}
       <div className="hud-subtitles-wrapper">
-        <div className="hud-title-main">SLRV BEAM // DIRECT P2P QUANTUM TRANSFER</div>
+        <div className="hud-title-main">PEER-TO-PEER FILE TRANSFER</div>
         <div className="hud-title-sub">
-          <span>ZERO-CLOUD</span>
+          <span>FAST</span>
           <span className="hud-dot" />
-          <span>AES-256</span>
+          <span>SECURE</span>
           <span className="hud-dot" />
-          <span>LOSSLESS</span>
+          <span>DIRECT</span>
           <span className="hud-dot" />
-          <span>DIRECT BEAM</span>
-          <span className="hud-dot" />
-          <span>MESH</span>
-        </div>
-
-        {/* Team Attribution Capsule */}
-        <div
-          style={{
-            marginTop: '0.65rem',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '0.6rem',
-            padding: '0.3rem 0.85rem',
-            background: 'rgba(255, 107, 0, 0.08)',
-            border: '1px solid rgba(255, 107, 0, 0.3)',
-            borderRadius: '2px',
-            fontSize: '0.72rem',
-            letterSpacing: '0.12em',
-            color: 'var(--hud-text-orange)',
-          }}
-        >
-          <span style={{ color: 'var(--hud-orange)', fontWeight: 700 }}>ENGINEERED BY:</span>
-          <span>SWARAJ</span>
-          <span className="hud-dot" style={{ backgroundColor: 'rgba(255,107,0,0.5)' }} />
-          <span>LAXMIKANT</span>
-          <span className="hud-dot" style={{ backgroundColor: 'rgba(255,107,0,0.5)' }} />
-          <span>RAHUL</span>
-          <span className="hud-dot" style={{ backgroundColor: 'rgba(255,107,0,0.5)' }} />
-          <span>VAIBHAV</span>
+          <span>NO SERVERS</span>
         </div>
       </div>
 
@@ -202,8 +204,8 @@ export const HeroHome: React.FC<HeroHomeProps> = ({
             onSendClick();
           }}
         >
-          <span style={{ color: 'var(--hud-orange)' }}>⚡</span>
-          <span>BEAM FILES</span>
+          <span style={{ color: 'var(--hud-orange)' }}>➔</span>
+          <span>SEND FILES</span>
         </button>
 
         <button
@@ -214,8 +216,8 @@ export const HeroHome: React.FC<HeroHomeProps> = ({
             onReceiveClick();
           }}
         >
-          <span>RECEIVE BEAM</span>
-          <span style={{ color: 'var(--hud-orange)' }}>📡</span>
+          <span>RECEIVE FILES</span>
+          <span style={{ color: 'var(--hud-orange)' }}>⬅</span>
         </button>
       </div>
 
@@ -239,16 +241,16 @@ export const HeroHome: React.FC<HeroHomeProps> = ({
           }}
         >
           <div>
-            NODE ID:{' '}
-            <strong style={{ color: '#fff', fontSize: '0.85rem' }}>
-              {currentDevice.name}
+            YOUR PAIRING CODE:{' '}
+            <strong style={{ color: 'var(--hud-orange)', fontSize: '0.9rem', letterSpacing: '0.15em' }}>
+              #{deviceShortCode}
             </strong>
           </div>
           <span className="hud-dot" />
           <div>
-            PAIRING CODE:{' '}
-            <strong style={{ color: 'var(--hud-orange)', fontSize: '0.9rem', letterSpacing: '0.15em' }}>
-              #{deviceShortCode}
+            IP:{' '}
+            <strong style={{ color: '#fff' }}>
+              {currentDevice.ipAddress || '127.0.0.1'}
             </strong>
           </div>
           <span className="hud-dot" />
@@ -274,7 +276,6 @@ export const HeroHome: React.FC<HeroHomeProps> = ({
           </button>
         </div>
       )}
-
     </section>
   );
 };
