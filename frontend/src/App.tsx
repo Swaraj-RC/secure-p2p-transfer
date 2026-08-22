@@ -182,71 +182,80 @@ export const App: React.FC = () => {
       const session = receivingBuffers.current.get(transferId);
       if (!session) return;
 
-      try {
-        const resolvedMime = WebRTCManager.getMimeType(session.meta.fileName, session.meta.mimeType);
-        const validChunks: ArrayBuffer[] = [];
-        for (let i = 0; i < session.meta.totalChunks; i++) {
-          if (session.chunks[i]) {
-            validChunks.push(session.chunks[i]);
-          } else {
-            console.error(`Chunk #${i} missing for transfer ${transferId}!`);
-          }
-        }
-
-        const fullBlob = new Blob(validChunks, { type: resolvedMime });
-        const blobUrl = URL.createObjectURL(fullBlob);
-
-        // Instant Zero-Delay Auto-Download to user's disk!
+      // Wait for all in-flight chunks to arrive before building Blob
+      const finalizeAssembly = () => {
         try {
-          const dlAnchor = document.createElement('a');
-          dlAnchor.href = blobUrl;
-          dlAnchor.setAttribute('download', session.meta.fileName || 'downloaded_file');
-          document.body.appendChild(dlAnchor);
-          dlAnchor.click();
-          setTimeout(() => {
-            if (document.body.contains(dlAnchor)) {
-              document.body.removeChild(dlAnchor);
+          const resolvedMime = WebRTCManager.getMimeType(session.meta.fileName, session.meta.mimeType);
+          const validChunks: ArrayBuffer[] = [];
+          for (let i = 0; i < session.meta.totalChunks; i++) {
+            if (session.chunks[i]) {
+              validChunks.push(session.chunks[i]);
+            } else {
+              console.warn(`Chunk #${i} missing during assembly for transfer ${transferId}!`);
             }
-          }, 1500);
-        } catch (dlErr) {
-          console.warn('Auto download trigger:', dlErr);
+          }
+
+          const fullBlob = new Blob(validChunks, { type: resolvedMime });
+          const blobUrl = URL.createObjectURL(fullBlob);
+
+          // Instant Zero-Delay Auto-Download to user's disk!
+          try {
+            const dlAnchor = document.createElement('a');
+            dlAnchor.href = blobUrl;
+            dlAnchor.setAttribute('download', session.meta.fileName || 'downloaded_file');
+            document.body.appendChild(dlAnchor);
+            dlAnchor.click();
+            setTimeout(() => {
+              if (document.body.contains(dlAnchor)) {
+                document.body.removeChild(dlAnchor);
+              }
+            }, 1500);
+          } catch (dlErr) {
+            console.warn('Auto download trigger:', dlErr);
+          }
+
+          const updatedItem: TransferItem = {
+            id: transferId,
+            direction: 'receive',
+            fileName: session.meta.fileName,
+            fileSize: session.meta.fileSize,
+            mimeType: resolvedMime,
+            peerId: session.meta.senderId,
+            peerName: `Node-${session.meta.senderId.slice(0, 6)}`,
+            status: 'completed',
+            progress: 100,
+            bytesTransferred: session.meta.fileSize,
+            totalBytes: session.meta.fileSize,
+            speedMBps: 0,
+            etaSeconds: 0,
+            chunksCompleted: session.meta.totalChunks,
+            totalChunks: session.meta.totalChunks,
+            fileHash: senderHash,
+            startedAt: session.startTime,
+            completedAt: Date.now(),
+            blobUrl,
+          };
+
+          setActiveTransfer(updatedItem);
+          setTransferHistory((prev) => [updatedItem, ...prev]);
+          soundFX.playSuccess();
+          receivingBuffers.current.delete(transferId);
+        } catch (err) {
+          console.error('Error assembling completed file:', err);
         }
+      };
 
-        const updatedItem: TransferItem = {
-          id: transferId,
-          direction: 'receive',
-          fileName: session.meta.fileName,
-          fileSize: session.meta.fileSize,
-          mimeType: resolvedMime,
-          peerId: session.meta.senderId,
-          peerName: `Node-${session.meta.senderId.slice(0, 6)}`,
-          status: 'completed',
-          progress: 100,
-          bytesTransferred: session.receivedBytes,
-          totalBytes: session.meta.fileSize,
-          speedMBps: 0,
-          etaSeconds: 0,
-          chunksCompleted: session.meta.totalChunks,
-          totalChunks: session.meta.totalChunks,
-          fileHash: senderHash,
-          startedAt: session.startTime,
-          completedAt: Date.now(),
-          blobUrl,
-        };
-
-        setActiveTransfer(updatedItem);
-        setTransferHistory((prev) => [updatedItem, ...prev]);
-        soundFX.playSuccess();
-        receivingBuffers.current.delete(transferId);
-
-        // Compute hash asynchronously in background without blocking download
-        fullBlob.arrayBuffer().then((buf) => {
-          WebCryptoEngine.computeHash(buf).then((h) => {
-            console.log('Cryptographic digest verified:', h);
-          });
-        }).catch(() => {});
-      } catch (err) {
-        console.error('Error assembling completed file:', err);
+      if (session.receivedCount >= session.meta.totalChunks) {
+        finalizeAssembly();
+      } else {
+        let attempts = 0;
+        const waitInterval = setInterval(() => {
+          attempts++;
+          if (session.receivedCount >= session.meta.totalChunks || attempts > 100) {
+            clearInterval(waitInterval);
+            finalizeAssembly();
+          }
+        }, 50);
       }
     });
 

@@ -428,8 +428,17 @@ export class WebRTCManager {
         pump();
       });
 
-      // 7. Signal Complete
-      await new Promise((r) => setTimeout(r, 80));
+      // 7. Flush Outbound Network Buffers and Signal Complete
+      const waitForDrain = async () => {
+        for (let attempt = 0; attempt < 60; attempt++) {
+          const pending = activeChannels.reduce((sum, c) => sum + (c.bufferedAmount || 0), 0);
+          if (pending === 0) break;
+          await new Promise((r) => setTimeout(r, 40));
+        }
+      };
+      await waitForDrain();
+      await new Promise((r) => setTimeout(r, 120));
+
       signalingClient.send({
         type: 'TRANSFER_COMPLETE',
         targetId: targetPeerId,
