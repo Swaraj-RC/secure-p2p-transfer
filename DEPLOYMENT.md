@@ -1,9 +1,11 @@
-# 🚀 SLRV BEAM: Deployment Guide
+# 🚀 SLRV BEAM: Live Deployment & Hosting
 **Engineered by Swaraj, Laxmikant, Rahul, and Vaibhav**
 
-This guide provides step-by-step instructions to deploy:
-- **Signaling Backend** ➔ **Render** (Free Node.js Web Service with WebSockets)
-- **Web Frontend** ➔ **Vercel** (Global CDN Edge Network)
+### 🌐 Live Public Production URL (Active Now):
+👉 **[https://configuration-approval-columnists-petersburg.trycloudflare.com](https://configuration-approval-columnists-petersburg.trycloudflare.com)**
+- **Frontend App**: `https://configuration-approval-columnists-petersburg.trycloudflare.com`
+- **Signaling WebSocket**: `wss://configuration-approval-columnists-petersburg.trycloudflare.com/ws`
+- **Health API**: `https://configuration-approval-columnists-petersburg.trycloudflare.com/api/health`
 
 ---
 
