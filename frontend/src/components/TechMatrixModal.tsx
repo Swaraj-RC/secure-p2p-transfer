@@ -41,9 +41,9 @@ export const TechMatrixModal: React.FC<TechMatrixModalProps> = ({ isOpen, onClos
           }}
         >
           <div style={{ fontWeight: 700, color: 'var(--hud-orange)', letterSpacing: '0.1em', marginBottom: '0.25rem' }}>
-            🏆 WHY OUR PLATFORM OUTPERFORMS LEGACY ALTERNATIVES:
+            🏆 WHY OUR PLATFORM OUTPERFORMS LEGACY & ALTERNATIVE METHODS:
           </div>
-          Legacy apps (WhatsApp, AirDrop, LocalSend, SendAnywhere) suffer from severe limitations: aggressive compression, ecosystem lock-in, mandatory app store installs, or centralized server bottlenecks. Our system delivers <strong>100% bit-for-bit lossless transfers</strong>, zero-install universal browser compatibility, and next-gen acoustic/WebRTC mesh modes with $0 maintenance cost.
+          Traditional sharing methods (Cloud Chat Apps, Bluetooth, and Single-Ecosystem Utilities) suffer from severe limitations: aggressive compression, ecosystem lock-in, mandatory app store installs, or centralized server bottlenecks. Our system delivers <strong>100% bit-for-bit lossless transfers</strong>, zero-install universal browser compatibility, and next-gen acoustic/WebRTC mesh modes with $0 maintenance cost.
         </div>
 
         {/* Feature Comparison Matrix Table */}
@@ -53,9 +53,9 @@ export const TechMatrixModal: React.FC<TechMatrixModalProps> = ({ isOpen, onClos
               <tr style={{ background: 'rgba(255, 107, 0, 0.15)', borderBottom: '1px solid var(--hud-orange)', color: 'var(--hud-orange)' }}>
                 <th style={{ padding: '0.75rem 0.5rem' }}>CAPABILITY</th>
                 <th style={{ padding: '0.75rem 0.5rem', color: '#00ff88', fontWeight: 700 }}>OUR P2P SYSTEM</th>
-                <th style={{ padding: '0.75rem 0.5rem' }}>WHATSAPP / TELEGRAM</th>
-                <th style={{ padding: '0.75rem 0.5rem' }}>LOCALSEND</th>
-                <th style={{ padding: '0.75rem 0.5rem' }}>AIRDROP</th>
+                <th style={{ padding: '0.75rem 0.5rem' }}>CLOUD CHAT APPS (OTHER)</th>
+                <th style={{ padding: '0.75rem 0.5rem' }}>BLUETOOTH (OTHER)</th>
+                <th style={{ padding: '0.75rem 0.5rem' }}>LOCAL UTILITIES (OTHER)</th>
               </tr>
             </thead>
             <tbody>
@@ -69,8 +69,8 @@ export const TechMatrixModal: React.FC<TechMatrixModalProps> = ({ isOpen, onClos
                   <AlertTriangle size={14} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px' }} />
                   Lossy compression (re-encodes 4K to 720p/1080p)
                 </td>
+                <td style={{ padding: '0.65rem 0.5rem', color: '#ccc' }}>Lossless (Slow bitrate)</td>
                 <td style={{ padding: '0.65rem 0.5rem', color: '#ccc' }}>Lossless (Binary)</td>
-                <td style={{ padding: '0.65rem 0.5rem', color: '#ccc' }}>Lossless (Apple only)</td>
               </tr>
 
               <tr style={{ borderBottom: '1px solid rgba(255,107,0,0.1)' }}>
@@ -79,9 +79,9 @@ export const TechMatrixModal: React.FC<TechMatrixModalProps> = ({ isOpen, onClos
                   <Check size={14} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px' }} />
                   <strong>ZERO INSTALL (Any Browser)</strong>
                 </td>
-                <td style={{ padding: '0.65rem 0.5rem', color: 'var(--hud-red)' }}>Mandatory App + Phone #</td>
+                <td style={{ padding: '0.65rem 0.5rem', color: 'var(--hud-red)' }}>Mandatory App + Account/Phone #</td>
+                <td style={{ padding: '0.65rem 0.5rem', color: '#ccc' }}>Built-in OS Pairing Required</td>
                 <td style={{ padding: '0.65rem 0.5rem', color: 'var(--hud-red)' }}>Mandatory App Store Install</td>
-                <td style={{ padding: '0.65rem 0.5rem', color: 'var(--hud-red)' }}>Apple OS Only</td>
               </tr>
 
               <tr style={{ borderBottom: '1px solid rgba(255,107,0,0.1)' }}>
@@ -90,39 +90,39 @@ export const TechMatrixModal: React.FC<TechMatrixModalProps> = ({ isOpen, onClos
                   <strong>iOS, Android, Windows, Mac, Linux, Smart TVs</strong>
                 </td>
                 <td style={{ padding: '0.65rem 0.5rem' }}>Limited to Registered accounts</td>
+                <td style={{ padding: '0.65rem 0.5rem', color: 'var(--hud-red)' }}>Proximity Only (~10m range)</td>
                 <td style={{ padding: '0.65rem 0.5rem' }}>Same Wi-Fi Subnet Only</td>
-                <td style={{ padding: '0.65rem 0.5rem', color: 'var(--hud-red)' }}>Apple Devices Only</td>
               </tr>
 
               <tr style={{ borderBottom: '1px solid rgba(255,107,0,0.1)' }}>
                 <td style={{ padding: '0.65rem 0.5rem', fontWeight: 600, color: '#fff' }}>Global Internet Transfer</td>
                 <td style={{ padding: '0.65rem 0.5rem', color: '#00ff88' }}>
                   <Check size={14} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px' }} />
-                  <strong>Direct IP / Country-to-Country</strong>
+                  <strong>Direct P2P / Worldwide / Cross-Network</strong>
                 </td>
-                <td style={{ padding: '0.65rem 0.5rem' }}>Via Central Servers</td>
+                <td style={{ padding: '0.65rem 0.5rem' }}>Via Central Servers (Double Hop)</td>
+                <td style={{ padding: '0.65rem 0.5rem', color: 'var(--hud-red)' }}>❌ Proximity Only (No Internet)</td>
                 <td style={{ padding: '0.65rem 0.5rem', color: 'var(--hud-red)' }}>❌ Local Network Only</td>
-                <td style={{ padding: '0.65rem 0.5rem', color: 'var(--hud-red)' }}>❌ Bluetooth Proximity Only</td>
               </tr>
 
               <tr style={{ borderBottom: '1px solid rgba(255,107,0,0.1)' }}>
                 <td style={{ padding: '0.65rem 0.5rem', fontWeight: 600, color: '#fff' }}>Security & Privacy</td>
                 <td style={{ padding: '0.65rem 0.5rem', color: '#00ff88' }}>
-                  <strong>AES-256-GCM + SHA-256 (Zero Logs/Storage)</strong>
+                  <strong>AES-256-GCM + SHA-256 (Zero Cloud Storage)</strong>
                 </td>
-                <td style={{ padding: '0.65rem 0.5rem', color: '#ccc' }}>Metadata stored on cloud</td>
+                <td style={{ padding: '0.65rem 0.5rem', color: '#ccc' }}>Metadata stored on cloud servers</td>
+                <td style={{ padding: '0.65rem 0.5rem', color: '#ccc' }}>Basic RF pairing / Discovery</td>
                 <td style={{ padding: '0.65rem 0.5rem' }}>TLS LAN</td>
-                <td style={{ padding: '0.65rem 0.5rem' }}>Apple TLS Direct</td>
               </tr>
 
               <tr style={{ borderBottom: '1px solid rgba(255,107,0,0.1)' }}>
-                <td style={{ padding: '0.65rem 0.5rem', fontWeight: 600, color: '#fff' }}>Maintenance & Cloud Cost</td>
+                <td style={{ padding: '0.65rem 0.5rem', fontWeight: 600, color: '#fff' }}>Transfer Speed & Maintenance</td>
                 <td style={{ padding: '0.65rem 0.5rem', color: '#00ff88' }}>
-                  <strong>$0 FOREVER (Serverless Mesh)</strong>
+                  <strong>Gigabit P2P Speed / $0 FOREVER</strong>
                 </td>
-                <td style={{ padding: '0.65rem 0.5rem' }}>Millions in cloud server bills</td>
+                <td style={{ padding: '0.65rem 0.5rem' }}>High cloud server overhead</td>
+                <td style={{ padding: '0.65rem 0.5rem', color: 'var(--hud-red)' }}>Ultra-slow (0.2–2 Mbps)</td>
                 <td style={{ padding: '0.65rem 0.5rem' }}>$0 (LAN only)</td>
-                <td style={{ padding: '0.65rem 0.5rem' }}>Apple proprietary hardware</td>
               </tr>
             </tbody>
           </table>
