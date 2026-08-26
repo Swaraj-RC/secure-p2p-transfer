@@ -10,6 +10,10 @@
 
 <div align="center">
   <img src="docs/assets/slrv-beam-ui-preview.png" alt="SLRV BEAM Cyber HUD Interface" width="100%" style="border-radius: 8px; border: 1px solid #ff6b00; box-shadow: 0 0 20px rgba(255,107,0,0.3);" />
+  
+  <br/><br/>
+  
+  ### 🌐 **Live Web App**: [https://slrv-beam.vercel.app](https://slrv-beam.vercel.app)
 </div>
 
 **SLRV BEAM** is a high-speed, zero-cloud, cross-platform decentralized peer-to-peer file beaming system engineered with zero central storage, bit-for-bit lossless transfers, WebCrypto AES-256-GCM encryption, WebSockets signaling, and direct WebRTC SCTP data channels.

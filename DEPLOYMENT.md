@@ -1,11 +1,13 @@
 # 🚀 SLRV BEAM: Live Deployment & Hosting
 **Engineered by Swaraj, Laxmikant, Rahul, and Vaibhav**
 
-### 🌐 Live Public Production URL (Active Now):
-👉 **[https://establishment-describes-chocolate-specified.trycloudflare.com](https://establishment-describes-chocolate-specified.trycloudflare.com)**
-- **Frontend App**: `https://establishment-describes-chocolate-specified.trycloudflare.com`
-- **Signaling WebSocket**: `wss://establishment-describes-chocolate-specified.trycloudflare.com/ws`
-- **Health API**: `https://establishment-describes-chocolate-specified.trycloudflare.com/api/health`
+### 🌐 Official Production Deployment:
+👉 **[https://slrv-beam.vercel.app](https://slrv-beam.vercel.app)**
+- **Production Frontend**: `https://slrv-beam.vercel.app`
+- **Render Signaling Hub**: `wss://slrv-beam-signaling.onrender.com/ws`
+
+### ⚡ Local & Dev Tunnel URL:
+- **Cloudflare Quick Tunnel**: `https://establishment-describes-chocolate-specified.trycloudflare.com`
 
 ---
 
