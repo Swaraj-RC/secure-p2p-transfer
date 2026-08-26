@@ -2,10 +2,10 @@
 **Engineered by Swaraj, Laxmikant, Rahul, and Vaibhav**
 
 ### 🌐 Live Public Production URL (Active Now):
-👉 **[https://configuration-approval-columnists-petersburg.trycloudflare.com](https://configuration-approval-columnists-petersburg.trycloudflare.com)**
-- **Frontend App**: `https://configuration-approval-columnists-petersburg.trycloudflare.com`
-- **Signaling WebSocket**: `wss://configuration-approval-columnists-petersburg.trycloudflare.com/ws`
-- **Health API**: `https://configuration-approval-columnists-petersburg.trycloudflare.com/api/health`
+👉 **[https://establishment-describes-chocolate-specified.trycloudflare.com](https://establishment-describes-chocolate-specified.trycloudflare.com)**
+- **Frontend App**: `https://establishment-describes-chocolate-specified.trycloudflare.com`
+- **Signaling WebSocket**: `wss://establishment-describes-chocolate-specified.trycloudflare.com/ws`
+- **Health API**: `https://establishment-describes-chocolate-specified.trycloudflare.com/api/health`
 
 ---
 
