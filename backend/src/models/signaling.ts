@@ -14,6 +14,7 @@ export type SignalingMessageType =
   | 'TRANSFER_REQUEST'
   | 'TRANSFER_ACCEPT'
   | 'TRANSFER_REJECT'
+  | 'TRANSFER_CANCEL'
   | 'TRANSFER_PROGRESS'
   | 'TRANSFER_COMPLETE'
   | 'RELAY_DATA'

@@ -1,16 +1,18 @@
 import React from 'react';
 import { TransferItem } from '../types';
-import { Activity, ShieldCheck, Download, AlertTriangle, CheckCircle } from 'lucide-react';
+import { Activity, ShieldCheck, Download, AlertTriangle, CheckCircle, X } from 'lucide-react';
 import { soundFX } from '../services/sound';
 
 interface ActiveTransferHUDProps {
   transfer: TransferItem | null;
   onDismiss: () => void;
+  onCancel?: () => void;
 }
 
 export const ActiveTransferHUD: React.FC<ActiveTransferHUDProps> = ({
   transfer,
   onDismiss,
+  onCancel,
 }) => {
   if (!transfer) return null;
 
@@ -34,13 +36,25 @@ export const ActiveTransferHUD: React.FC<ActiveTransferHUDProps> = ({
         {/* Modal Header */}
         <div className="hud-modal-header">
           <div className="hud-modal-title">
-            <Activity size={20} className="hud-status-active" />
+            <Activity size={20} className={isFailed ? 'hud-status-failed' : 'hud-status-active'} />
             <span>
               {transfer.direction === 'send' ? 'TRANSMITTING CHUNKS' : 'RECEIVING CHUNKS'} //{' '}
               {transfer.status.toUpperCase()}
             </span>
           </div>
-          {isComplete || isFailed ? (
+          {!isComplete && !isFailed && onCancel ? (
+            <button
+              className="hud-close-btn"
+              onClick={() => {
+                soundFX.playClick();
+                onCancel();
+              }}
+              style={{ borderColor: 'var(--hud-red)', color: 'var(--hud-red)', padding: '0.2rem 0.5rem', fontSize: '0.7rem' }}
+              title="Cancel Transfer"
+            >
+              CANCEL
+            </button>
+          ) : isComplete || isFailed ? (
             <button className="hud-close-btn" onClick={onDismiss}>
               DISMISS
             </button>
@@ -59,7 +73,7 @@ export const ActiveTransferHUD: React.FC<ActiveTransferHUDProps> = ({
 
           </div>
           <div style={{ textAlign: 'right' }}>
-            <div style={{ color: 'var(--hud-orange)', fontSize: '1.25rem', fontWeight: 700 }}>
+            <div style={{ color: isFailed ? 'var(--hud-red)' : 'var(--hud-orange)', fontSize: '1.25rem', fontWeight: 700 }}>
               {transfer.progress}%
             </div>
             <div style={{ color: 'var(--hud-text-dim)', fontSize: '0.8rem' }}>
@@ -70,7 +84,13 @@ export const ActiveTransferHUD: React.FC<ActiveTransferHUDProps> = ({
 
         {/* Linear Progress Bar */}
         <div className="hud-progress-track">
-          <div className="hud-progress-fill" style={{ width: `${transfer.progress}%` }} />
+          <div
+            className="hud-progress-fill"
+            style={{
+              width: `${transfer.progress}%`,
+              background: isFailed ? 'var(--hud-red)' : undefined,
+            }}
+          />
         </div>
 
         {/* Real-Time Metrics HUD */}
@@ -80,7 +100,7 @@ export const ActiveTransferHUD: React.FC<ActiveTransferHUDProps> = ({
             gridTemplateColumns: 'repeat(3, 1fr)',
             gap: '1rem',
             background: 'rgba(0,0,0,0.5)',
-            border: '1px solid var(--hud-orange-dim)',
+            border: `1px solid ${isFailed ? 'rgba(255,51,68,0.3)' : 'var(--hud-orange-dim)'}`,
             padding: '0.85rem 1rem',
             fontSize: '0.75rem',
             textAlign: 'center',
@@ -95,7 +115,7 @@ export const ActiveTransferHUD: React.FC<ActiveTransferHUDProps> = ({
           <div>
             <div style={{ color: 'var(--hud-text-dim)' }}>ETA</div>
             <div style={{ color: '#fff', fontWeight: 600, fontSize: '0.95rem', marginTop: '0.2rem' }}>
-              {isComplete ? '0s' : `${Math.ceil(transfer.etaSeconds)}s`}
+              {isComplete || isFailed ? '0s' : `${Math.ceil(transfer.etaSeconds)}s`}
             </div>
           </div>
           <div>
@@ -114,7 +134,7 @@ export const ActiveTransferHUD: React.FC<ActiveTransferHUDProps> = ({
           <div className="hud-chunk-matrix">
             {Array.from({ length: Math.min(transfer.totalChunks || 1, 100) }).map((_, idx) => {
               const isChunkDone = idx < transfer.chunksCompleted;
-              const isChunkCurrent = idx === transfer.chunksCompleted && !isComplete;
+              const isChunkCurrent = idx === transfer.chunksCompleted && !isComplete && !isFailed;
               return (
                 <div
                   key={idx}
@@ -176,7 +196,11 @@ export const ActiveTransferHUD: React.FC<ActiveTransferHUDProps> = ({
             }}
           >
             <AlertTriangle size={18} />
-            <span>TRANSFER FAILED: {transfer.error || 'Connection broken or stream timed out.'}</span>
+            <span>
+              {transfer.status === 'cancelled'
+                ? `TRANSFER CANCELLED: ${transfer.error || 'Transfer was aborted by user.'}`
+                : `TRANSFER FAILED: ${transfer.error || 'Connection broken or stream timed out.'}`}
+            </span>
           </div>
         )}
 
@@ -191,8 +215,31 @@ export const ActiveTransferHUD: React.FC<ActiveTransferHUDProps> = ({
               CLOSE
             </button>
           ) : (
-            <div style={{ color: 'var(--hud-orange)', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <ShieldCheck size={14} /> AES-256-GCM ENCRYPTED IN-FLIGHT
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+              <div style={{ color: 'var(--hud-orange)', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <ShieldCheck size={14} /> AES-256-GCM ENCRYPTED IN-FLIGHT
+              </div>
+              {onCancel && (
+                <button
+                  className="hud-btn"
+                  onClick={() => {
+                    soundFX.playClick();
+                    onCancel();
+                  }}
+                  style={{
+                    borderColor: 'var(--hud-red)',
+                    color: 'var(--hud-red)',
+                    background: 'rgba(255, 51, 68, 0.1)',
+                    padding: '0.45rem 1.15rem',
+                    fontSize: '0.75rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.4rem',
+                  }}
+                >
+                  <X size={14} /> CANCEL TRANSFER
+                </button>
+              )}
             </div>
           )}
         </div>

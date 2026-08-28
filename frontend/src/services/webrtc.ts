@@ -25,9 +25,18 @@ export class WebRTCManager {
   private multiChannels: Map<string, RTCDataChannel[]> = new Map();
   private pendingCandidates: Map<string, RTCIceCandidateInit[]> = new Map();
   private binaryChunkListeners: Map<string, (chunkIndex: number, totalChunks: number, data: ArrayBuffer) => void> = new Map();
+  private activeTransfers: Set<string> = new Set();
 
   constructor() {
     this.setupSignalingListeners();
+  }
+
+  public cancelTransfer(transferId: string) {
+    this.activeTransfers.delete(transferId);
+  }
+
+  public isTransferActive(transferId: string): boolean {
+    return this.activeTransfers.has(transferId);
   }
 
   private setupSignalingListeners() {
@@ -281,6 +290,8 @@ export class WebRTCManager {
     onError: (err: string) => void
   ) {
     try {
+      this.activeTransfers.add(transfer.id);
+
       // 1. Hardware AES-256-GCM Session Key
       const aesKey = await WebCryptoEngine.generateAESKey();
       const keyHex = await WebCryptoEngine.exportKeyToHex(aesKey);
@@ -308,7 +319,7 @@ export class WebRTCManager {
         },
       });
 
-      // 4. Wait for Recipient Acceptance
+      // 4. Wait for Recipient Acceptance or Cancellation
       const accepted = await new Promise<boolean>((resolve) => {
         let resolved = false;
         const timeout = setTimeout(() => {
@@ -322,7 +333,7 @@ export class WebRTCManager {
           if (msg.payload?.transferId === transfer.id && !resolved) {
             resolved = true;
             clearTimeout(timeout);
-            cleanupAccept();
+            cleanupAll();
             resolve(true);
           }
         });
@@ -330,11 +341,30 @@ export class WebRTCManager {
           if (msg.payload?.transferId === transfer.id && !resolved) {
             resolved = true;
             clearTimeout(timeout);
-            cleanupReject();
+            cleanupAll();
             resolve(false);
           }
         });
+        const cleanupCancel = signalingClient.on('TRANSFER_CANCEL', (msg) => {
+          if (msg.payload?.transferId === transfer.id && !resolved) {
+            resolved = true;
+            clearTimeout(timeout);
+            cleanupAll();
+            resolve(false);
+          }
+        });
+
+        const cleanupAll = () => {
+          cleanupAccept();
+          cleanupReject();
+          cleanupCancel();
+        };
       });
+
+      if (!this.activeTransfers.has(transfer.id)) {
+        onError('Transfer cancelled by user');
+        return;
+      }
 
       if (!accepted) {
         onError('Transfer rejected by recipient or timed out');
@@ -355,6 +385,11 @@ export class WebRTCManager {
         const pump = async () => {
           try {
             while (nextChunkToRead < totalChunks) {
+              if (!this.activeTransfers.has(transfer.id)) {
+                rejectTransfer(new Error('Transfer cancelled'));
+                return;
+              }
+
               if (isDirectP2P && activeChannels.length > 0) {
                 const dc = activeChannels[channelCursor % activeChannels.length];
 
@@ -428,9 +463,15 @@ export class WebRTCManager {
         pump();
       });
 
+      if (!this.activeTransfers.has(transfer.id)) {
+        onError('Transfer cancelled');
+        return;
+      }
+
       // 7. Flush Outbound Network Buffers and Signal Complete
       const waitForDrain = async () => {
         for (let attempt = 0; attempt < 60; attempt++) {
+          if (!this.activeTransfers.has(transfer.id)) return;
           const pending = activeChannels.reduce((sum, c) => sum + (c.bufferedAmount || 0), 0);
           if (pending === 0) break;
           await new Promise((r) => setTimeout(r, 40));
@@ -438,6 +479,11 @@ export class WebRTCManager {
       };
       await waitForDrain();
       await new Promise((r) => setTimeout(r, 120));
+
+      if (!this.activeTransfers.has(transfer.id)) {
+        onError('Transfer cancelled');
+        return;
+      }
 
       signalingClient.send({
         type: 'TRANSFER_COMPLETE',
@@ -451,6 +497,8 @@ export class WebRTCManager {
       onComplete(fileHash);
     } catch (e: any) {
       onError(e?.message || 'File transfer stream failed');
+    } finally {
+      this.activeTransfers.delete(transfer.id);
     }
   }
 }

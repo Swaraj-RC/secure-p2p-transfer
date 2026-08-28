@@ -174,6 +174,7 @@ export class WebSocketController {
       case 'TRANSFER_REQUEST':
       case 'TRANSFER_ACCEPT':
       case 'TRANSFER_REJECT':
+      case 'TRANSFER_CANCEL':
       case 'TRANSFER_PROGRESS':
       case 'TRANSFER_COMPLETE': {
         if (!message.targetId) {

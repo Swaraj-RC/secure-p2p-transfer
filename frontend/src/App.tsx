@@ -259,8 +259,26 @@ export const App: React.FC = () => {
       }
     });
 
+    // 5. Transfer Cancel signal from remote peer
+    const unbindCancel = signalingClient.on('TRANSFER_CANCEL', (msg) => {
+      const { transferId } = msg.payload || {};
+      if (!transferId) return;
 
+      if (receivingBuffers.current.has(transferId)) {
+        receivingBuffers.current.delete(transferId);
+      }
+      webrtcManager.cancelTransfer(transferId);
 
+      setActiveTransfer((prev) => {
+        if (!prev || prev.id !== transferId) return prev;
+        return {
+          ...prev,
+          status: 'cancelled',
+          error: 'Transfer was cancelled by remote peer.',
+        };
+      });
+      soundFX.playClick();
+    });
 
     return () => {
       unbindList();
@@ -270,6 +288,7 @@ export const App: React.FC = () => {
       unbindTransferReq();
       unbindRelay();
       unbindComplete();
+      unbindCancel();
     };
   }, []);
 
@@ -406,6 +425,39 @@ export const App: React.FC = () => {
     );
   }, [peers]);
 
+  // Cancel active transfer (initiated by user)
+  const handleCancelActiveTransfer = useCallback(() => {
+    if (!activeTransfer) return;
+    const transferId = activeTransfer.id;
+    const targetPeerId = activeTransfer.peerId;
+
+    webrtcManager.cancelTransfer(transferId);
+
+    if (receivingBuffers.current.has(transferId)) {
+      receivingBuffers.current.delete(transferId);
+    }
+
+    if (targetPeerId) {
+      signalingClient.send({
+        type: 'TRANSFER_CANCEL',
+        targetId: targetPeerId,
+        payload: {
+          transferId,
+        },
+      });
+    }
+
+    setActiveTransfer((prev) => {
+      if (!prev || prev.id !== transferId) return prev;
+      return {
+        ...prev,
+        status: 'cancelled',
+        error: 'Transfer cancelled by user.',
+      };
+    });
+    soundFX.playClick();
+  }, [activeTransfer]);
+
   const toggleSound = () => {
     const next = !soundEnabled;
     setSoundEnabled(next);
@@ -473,6 +525,7 @@ export const App: React.FC = () => {
       <ActiveTransferHUD
         transfer={activeTransfer}
         onDismiss={() => setActiveTransfer(null)}
+        onCancel={handleCancelActiveTransfer}
       />
 
       <PeersDrawer
