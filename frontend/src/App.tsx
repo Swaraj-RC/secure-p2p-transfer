@@ -45,10 +45,17 @@ export const App: React.FC = () => {
   const [incomingRequest, setIncomingRequest] = useState<any | null>(null);
   const [transferHistory, setTransferHistory] = useState<TransferItem[]>([]);
 
+  // Batch transfer management refs
+  const isBatchCancelledRef = useRef<boolean>(false);
+  const autoAcceptedBatches = useRef<Set<string>>(new Set());
+
   // Incoming chunk assembly buffers
   const receivingBuffers = useRef<Map<string, { chunks: ArrayBuffer[]; meta: any; key: CryptoKey; receivedBytes: number; startTime: number; receivedCount: number }>>(
     new Map()
   );
+
+  // Accept incoming transfer handler ref for auto-accept access
+  const handleAcceptTransferRef = useRef<(req: any) => Promise<void>>();
 
   // 1. Initialize Signaling WebSocket
   useEffect(() => {
@@ -84,15 +91,22 @@ export const App: React.FC = () => {
       }
     });
 
-    // 2. Incoming Transfer Offer — AUTO-POPUP notification regardless of modal state
+    // 2. Incoming Transfer Offer — AUTO-POPUP notification or AUTO-ACCEPT if part of accepted batch
     const unbindTransferReq = signalingClient.on('TRANSFER_REQUEST', (msg) => {
       if (msg.payload) {
         const request = {
           ...msg.payload,
           senderId: msg.senderId,
         };
+
+        // If this transfer is part of a batch that was already approved by user, auto-accept seamlessly!
+        if (request.batchId && autoAcceptedBatches.current.has(request.batchId) && handleAcceptTransferRef.current) {
+          handleAcceptTransferRef.current(request);
+          return;
+        }
+
         setIncomingRequest(request);
-        setIsReceiveOpen(true); // Force open the receive modal
+        setIsReceiveOpen(true); // Force open the receive modal for new session
         soundFX.playSuccess();  // Alert chime
       }
     });
@@ -144,7 +158,6 @@ export const App: React.FC = () => {
         const rawEncrypted = await base64ToArrayBuffer(data);
         const decryptedChunk = await WebCryptoEngine.decryptChunk(session.key, rawEncrypted);
 
-
         if (!session.chunks[chunkIndex]) {
           session.chunks[chunkIndex] = decryptedChunk;
           session.receivedBytes += decryptedChunk.byteLength;
@@ -172,7 +185,6 @@ export const App: React.FC = () => {
         console.error('Error decrypting chunk #', chunkIndex, err);
       }
     });
-
 
     // 4. Transfer Complete signal
     const unbindComplete = signalingClient.on('TRANSFER_COMPLETE', async (msg) => {
@@ -234,6 +246,9 @@ export const App: React.FC = () => {
             startedAt: session.startTime,
             completedAt: Date.now(),
             blobUrl,
+            batchId: session.meta.batchId,
+            batchIndex: session.meta.batchIndex,
+            batchTotal: session.meta.batchTotal,
           };
 
           setActiveTransfer(updatedItem);
@@ -294,6 +309,10 @@ export const App: React.FC = () => {
 
   // Accept incoming transfer
   const handleAcceptTransfer = useCallback(async (req: any) => {
+    if (req.batchId) {
+      autoAcceptedBatches.current.add(req.batchId);
+    }
+
     const key = await WebCryptoEngine.importKeyFromHex(req.encryptionKey);
 
     receivingBuffers.current.set(req.transferId, {
@@ -322,10 +341,14 @@ export const App: React.FC = () => {
       totalChunks: req.totalChunks,
       fileHash: req.fileHash,
       startedAt: Date.now(),
+      batchId: req.batchId,
+      batchIndex: req.batchIndex,
+      batchTotal: req.batchTotal,
     };
 
     setActiveTransfer(item);
     setIncomingRequest(null);
+    setIsReceiveOpen(false);
 
     signalingClient.send({
       type: 'TRANSFER_ACCEPT',
@@ -336,7 +359,12 @@ export const App: React.FC = () => {
     });
   }, []);
 
+  handleAcceptTransferRef.current = handleAcceptTransfer;
+
   const handleRejectTransfer = useCallback((req: any) => {
+    if (req.batchId) {
+      autoAcceptedBatches.current.delete(req.batchId);
+    }
     signalingClient.send({
       type: 'TRANSFER_REJECT',
       targetId: req.senderId,
@@ -347,8 +375,12 @@ export const App: React.FC = () => {
     setIncomingRequest(null);
   }, []);
 
-  // Start Sending a File
-  const handleStartSend = useCallback(async (file: File, targetPeerId: string) => {
+  // Start Sending Single or Multiple Files (Sequential Continuous Pipeline)
+  const handleStartSend = useCallback(async (files: File[], targetPeerId: string) => {
+    if (!files || files.length === 0) return;
+
+    isBatchCancelledRef.current = false;
+
     const targetPeer = peers.find(
       (p) =>
         p.id === targetPeerId ||
@@ -362,71 +394,93 @@ export const App: React.FC = () => {
       : targetPeerId.includes('.') || targetPeerId.includes(':')
       ? `IP: ${targetPeerId}`
       : `Node-${targetPeerId.slice(0, 8)}`;
-    const transferId = `tx-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
-    const item: TransferItem = {
-      id: transferId,
-      direction: 'send',
-      fileName: file.name,
-      fileSize: file.size,
-      mimeType: file.type,
-      peerId: effectivePeerId,
-      peerName: peerDisplayName,
-      status: 'offering',
-      progress: 0,
-      bytesTransferred: 0,
-      totalBytes: file.size,
-      speedMBps: 0,
-      etaSeconds: 0,
-      chunksCompleted: 0,
-      totalChunks: Math.ceil(file.size / (64 * 1024)),
-      startedAt: Date.now(),
-    };
+    const batchId = `btx-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const totalFiles = files.length;
 
-    setActiveTransfer(item);
+    for (let i = 0; i < totalFiles; i++) {
+      if (isBatchCancelledRef.current) break;
 
-    await webrtcManager.sendFile(
-      file,
-      effectivePeerId,
-      item,
-      (progress, speedMBps, etaSeconds, chunksCompleted) => {
+      const file = files[i];
+      const transferId = `tx-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
-        setActiveTransfer((prev) => {
-          if (!prev || prev.id !== transferId) return prev;
-          return {
-            ...prev,
-            status: 'transferring',
-            progress,
-            speedMBps,
-            etaSeconds,
-            chunksCompleted,
-            bytesTransferred: Math.round((progress / 100) * file.size),
-          };
-        });
-      },
-      (fileHash) => {
-        const completedItem: TransferItem = {
-          ...item,
-          status: 'completed',
-          progress: 100,
-          bytesTransferred: file.size,
-          speedMBps: 0,
-          etaSeconds: 0,
-          fileHash,
-          completedAt: Date.now(),
-        };
-        setActiveTransfer(completedItem);
-        setTransferHistory((prev) => [completedItem, ...prev]);
-        soundFX.playSuccess();
-      },
-      (error) => {
-        setActiveTransfer((prev) => (prev ? { ...prev, status: 'failed', error } : null));
+      const item: TransferItem = {
+        id: transferId,
+        direction: 'send',
+        fileName: file.name,
+        fileSize: file.size,
+        mimeType: file.type,
+        peerId: effectivePeerId,
+        peerName: peerDisplayName,
+        status: 'offering',
+        progress: 0,
+        bytesTransferred: 0,
+        totalBytes: file.size,
+        speedMBps: 0,
+        etaSeconds: 0,
+        chunksCompleted: 0,
+        totalChunks: Math.ceil(file.size / (64 * 1024)),
+        startedAt: Date.now(),
+        batchId,
+        batchIndex: i + 1,
+        batchTotal: totalFiles,
+      };
+
+      setActiveTransfer(item);
+
+      await new Promise<void>((resolveFile) => {
+        webrtcManager.sendFile(
+          file,
+          effectivePeerId,
+          item,
+          (progress, speedMBps, etaSeconds, chunksCompleted) => {
+            setActiveTransfer((prev) => {
+              if (!prev || prev.id !== transferId) return prev;
+              return {
+                ...prev,
+                status: 'transferring',
+                progress,
+                speedMBps,
+                etaSeconds,
+                chunksCompleted,
+                bytesTransferred: Math.round((progress / 100) * file.size),
+              };
+            });
+          },
+          (fileHash) => {
+            const completedItem: TransferItem = {
+              ...item,
+              status: 'completed',
+              progress: 100,
+              bytesTransferred: file.size,
+              speedMBps: 0,
+              etaSeconds: 0,
+              fileHash,
+              completedAt: Date.now(),
+            };
+            setActiveTransfer(completedItem);
+            setTransferHistory((prev) => [completedItem, ...prev]);
+            soundFX.playSuccess();
+            resolveFile();
+          },
+          (error) => {
+            setActiveTransfer((prev) => (prev ? { ...prev, status: 'failed', error } : null));
+            resolveFile();
+          },
+          { batchId, batchIndex: i + 1, batchTotal: totalFiles }
+        );
+      });
+
+      // Brief micro-pause between files to allow receiver file stream flush
+      if (i < totalFiles - 1 && !isBatchCancelledRef.current) {
+        await new Promise((r) => setTimeout(r, 200));
       }
-    );
+    }
   }, [peers]);
 
   // Cancel active transfer (initiated by user)
   const handleCancelActiveTransfer = useCallback(() => {
+    isBatchCancelledRef.current = true;
     if (!activeTransfer) return;
     const transferId = activeTransfer.id;
     const targetPeerId = activeTransfer.peerId;

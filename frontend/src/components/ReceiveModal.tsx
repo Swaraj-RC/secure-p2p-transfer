@@ -12,6 +12,9 @@ interface IncomingRequest {
   fileHash: string;
   totalChunks: number;
   encryptionKey: string;
+  batchId?: string;
+  batchIndex?: number;
+  batchTotal?: number;
 }
 
 interface ReceiveModalProps {
@@ -36,7 +39,8 @@ export const ReceiveModal: React.FC<ReceiveModalProps> = ({
   const formatFileSize = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
   };
 
   return (
@@ -69,7 +73,9 @@ export const ReceiveModal: React.FC<ReceiveModalProps> = ({
           >
             <ShieldAlert size={44} color="var(--hud-orange)" style={{ margin: '0 auto 0.75rem' }} />
             <div style={{ color: 'var(--hud-orange)', fontSize: '1.1rem', fontWeight: 700, letterSpacing: '0.1em' }}>
-              INCOMING FILE TRANSMISSION DETECTED!
+              {incomingRequest.batchTotal && incomingRequest.batchTotal > 1
+                ? `INCOMING BATCH TRANSMISSION (FILE ${incomingRequest.batchIndex || 1} OF ${incomingRequest.batchTotal})`
+                : 'INCOMING FILE TRANSMISSION DETECTED!'}
             </div>
             <div style={{ color: '#fff', fontSize: '1.15rem', fontWeight: 600, marginTop: '0.5rem' }}>
               {incomingRequest.fileName}

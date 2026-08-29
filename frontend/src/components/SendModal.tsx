@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { UploadCloud, Shield, FileCheck, X, Laptop, Smartphone, Globe, Radio, Terminal } from 'lucide-react';
+import { UploadCloud, Shield, FileCheck, X, Laptop, Smartphone, Globe, Radio, Terminal, Plus, Trash2, Layers } from 'lucide-react';
 import { Device } from '../types';
 import { soundFX } from '../services/sound';
 
@@ -7,7 +7,7 @@ interface SendModalProps {
   isOpen: boolean;
   onClose: () => void;
   peers: Device[];
-  onStartSend: (file: File, targetPeerId: string) => void;
+  onStartSend: (files: File[], targetPeerId: string) => void;
 }
 
 export const SendModal: React.FC<SendModalProps> = ({
@@ -16,7 +16,7 @@ export const SendModal: React.FC<SendModalProps> = ({
   peers,
   onStartSend,
 }) => {
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [targetMode, setTargetMode] = useState<'detected' | 'direct'>('direct');
   const [selectedPeerId, setSelectedPeerId] = useState<string>('');
   const [customIpAddress, setCustomIpAddress] = useState<string>('');
@@ -28,37 +28,63 @@ export const SendModal: React.FC<SendModalProps> = ({
   const handleFileDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      setSelectedFile(e.dataTransfer.files[0]);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const dropped = Array.from(e.dataTransfer.files);
+      setSelectedFiles((prev) => {
+        const existingNames = new Set(prev.map((f) => `${f.name}-${f.size}-${f.lastModified}`));
+        const uniqueNew = dropped.filter((f) => !existingNames.has(`${f.name}-${f.size}-${f.lastModified}`));
+        return [...prev, ...uniqueNew];
+      });
       soundFX.playClick();
     }
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setSelectedFile(e.target.files[0]);
+    if (e.target.files && e.target.files.length > 0) {
+      const selected = Array.from(e.target.files);
+      setSelectedFiles((prev) => {
+        const existingNames = new Set(prev.map((f) => `${f.name}-${f.size}-${f.lastModified}`));
+        const uniqueNew = selected.filter((f) => !existingNames.has(`${f.name}-${f.size}-${f.lastModified}`));
+        return [...prev, ...uniqueNew];
+      });
       soundFX.playClick();
+      e.target.value = '';
     }
+  };
+
+  const handleRemoveFile = (index: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
+    soundFX.playClick();
+  };
+
+  const handleClearAll = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedFiles([]);
+    soundFX.playClick();
   };
 
   const formatFileSize = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
   };
 
+  const totalBytes = selectedFiles.reduce((acc, f) => acc + f.size, 0);
   const effectiveTargetId = targetMode === 'direct' ? customIpAddress.trim() : selectedPeerId;
 
   const handleSubmit = () => {
-    if (!selectedFile || !effectiveTargetId) return;
+    if (selectedFiles.length === 0 || !effectiveTargetId) return;
     soundFX.playClick();
-    onStartSend(selectedFile, effectiveTargetId);
+    onStartSend(selectedFiles, effectiveTargetId);
+    setSelectedFiles([]);
     onClose();
   };
 
   return (
     <div className="hud-modal-overlay" onClick={onClose}>
-      <div className="hud-modal-panel" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '640px' }}>
+      <div className="hud-modal-panel" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '680px' }}>
         {/* Corner Reticles */}
         <div className="hud-corner-tl" />
         <div className="hud-corner-tr" />
@@ -68,56 +94,143 @@ export const SendModal: React.FC<SendModalProps> = ({
         <div className="hud-modal-header">
           <div className="hud-modal-title">
             <UploadCloud size={20} />
-            <span>TRANSMIT PAYLOAD // SEND</span>
+            <span>TRANSMIT PAYLOAD // SEND {selectedFiles.length > 1 ? `(${selectedFiles.length} FILES)` : ''}</span>
           </div>
           <button className="hud-close-btn" onClick={onClose}>
             <X size={16} />
           </button>
         </div>
 
-        {/* 1. Drag & Drop File Zone */}
+        {/* 1. Drag & Drop File Zone / Multiple File Staging Deck */}
         <input
           type="file"
           ref={fileInputRef}
+          multiple
           style={{ display: 'none' }}
           onChange={handleFileSelect}
         />
 
-        <div
-          className={`hud-dropzone ${isDragging ? 'active' : ''}`}
-          onDragOver={(e) => {
-            e.preventDefault();
-            setIsDragging(true);
-          }}
-          onDragLeave={() => setIsDragging(false)}
-          onDrop={handleFileDrop}
-          onClick={() => fileInputRef.current?.click()}
-        >
-          {selectedFile ? (
-            <>
-              <FileCheck size={36} color="var(--hud-orange)" />
-              <div style={{ color: '#fff', fontWeight: 600, fontSize: '1.05rem' }}>
-                {selectedFile.name}
+        {selectedFiles.length === 0 ? (
+          <div
+            className={`hud-dropzone ${isDragging ? 'active' : ''}`}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setIsDragging(true);
+            }}
+            onDragLeave={() => setIsDragging(false)}
+            onDrop={handleFileDrop}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <UploadCloud size={40} color="var(--hud-orange)" />
+            <div style={{ color: '#fff', fontSize: '0.95rem', letterSpacing: '0.1em' }}>
+              DRAG & DROP <span style={{ color: 'var(--hud-orange)' }}>ONE OR MULTIPLE FILES</span> OR BROWSE
+            </div>
+            <div style={{ color: 'var(--hud-text-dim)', fontSize: '0.75rem' }}>
+              SUPPORTS BATCH TRANSMISSIONS • AUTOMATIC AES-256-GCM CHUNKING
+            </div>
+          </div>
+        ) : (
+          <div
+            style={{
+              border: '1px solid var(--hud-orange)',
+              background: 'rgba(0,0,0,0.45)',
+              padding: '1rem',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '0.75rem',
+                paddingBottom: '0.5rem',
+                borderBottom: '1px solid rgba(255,107,0,0.2)',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--hud-orange)', fontSize: '0.85rem', fontWeight: 600 }}>
+                <Layers size={16} />
+                <span>STAGED FILES ({selectedFiles.length}) • TOTAL: {formatFileSize(totalBytes)}</span>
               </div>
-              <div style={{ color: 'var(--hud-text-dim)', fontSize: '0.8rem' }}>
-                SIZE: {formatFileSize(selectedFile.size)} &nbsp; // &nbsp; MIME: {selectedFile.type || 'application/octet-stream'}
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button
+                  className="hud-btn"
+                  onClick={() => fileInputRef.current?.click()}
+                  style={{ padding: '0.35rem 0.75rem', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+                >
+                  <Plus size={12} /> ADD MORE
+                </button>
+                <button
+                  className="hud-btn"
+                  onClick={handleClearAll}
+                  style={{ padding: '0.35rem 0.75rem', fontSize: '0.7rem', borderColor: 'var(--hud-red)', color: 'var(--hud-red)' }}
+                >
+                  <Trash2 size={12} /> CLEAR
+                </button>
               </div>
-              <div style={{ color: 'var(--hud-orange)', fontSize: '0.75rem', marginTop: '0.25rem' }}>
-                [ CLICK TO CHANGE FILE ]
-              </div>
-            </>
-          ) : (
-            <>
-              <UploadCloud size={40} color="var(--hud-orange)" />
-              <div style={{ color: '#fff', fontSize: '0.95rem', letterSpacing: '0.1em' }}>
-                DRAG & DROP FILE OR <span style={{ color: 'var(--hud-orange)' }}>BROWSE DISK</span>
-              </div>
-              <div style={{ color: 'var(--hud-text-dim)', fontSize: '0.75rem' }}>
-                AUTOMATIC AES-256-GCM CHUNKING & SHA-256 INTEGRITY HASHING
-              </div>
-            </>
-          )}
-        </div>
+            </div>
+
+            {/* Scrollable File List */}
+            <div
+              className="hud-file-deck"
+              style={{
+                maxHeight: '180px',
+                overflowY: 'auto',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.4rem',
+                paddingRight: '0.25rem',
+              }}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setIsDragging(true);
+              }}
+              onDragLeave={() => setIsDragging(false)}
+              onDrop={handleFileDrop}
+            >
+              {selectedFiles.map((file, idx) => (
+                <div
+                  key={`${file.name}-${idx}`}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '0.5rem 0.75rem',
+                    background: 'rgba(255,255,255,0.04)',
+                    border: '1px solid rgba(255,107,0,0.15)',
+                    transition: 'all 0.2s ease',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', overflow: 'hidden' }}>
+                    <FileCheck size={16} color="var(--hud-orange)" style={{ flexShrink: 0 }} />
+                    <div style={{ overflow: 'hidden' }}>
+                      <div style={{ color: '#fff', fontSize: '0.85rem', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {file.name}
+                      </div>
+                      <div style={{ color: 'var(--hud-text-dim)', fontSize: '0.7rem' }}>
+                        {formatFileSize(file.size)} • {file.type || 'binary/stream'}
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={(e) => handleRemoveFile(idx, e)}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: 'var(--hud-text-dim)',
+                      cursor: 'pointer',
+                      padding: '0.25rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                    }}
+                    title="Remove file"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* 2. Target Mode Tabs */}
         <div style={{ marginTop: '1.25rem' }}>
@@ -256,19 +369,20 @@ export const SendModal: React.FC<SendModalProps> = ({
           </button>
           <button
             className="hud-btn hud-btn-orange"
-            disabled={!selectedFile || !effectiveTargetId}
+            disabled={selectedFiles.length === 0 || !effectiveTargetId}
             onClick={handleSubmit}
             style={{
               padding: '0.75rem 2rem',
               fontSize: '0.8rem',
-              opacity: !selectedFile || !effectiveTargetId ? 0.4 : 1,
-              cursor: !selectedFile || !effectiveTargetId ? 'not-allowed' : 'pointer',
+              opacity: selectedFiles.length === 0 || !effectiveTargetId ? 0.4 : 1,
+              cursor: selectedFiles.length === 0 || !effectiveTargetId ? 'not-allowed' : 'pointer',
             }}
           >
-            INITIATE TRANSFER ➔
+            {selectedFiles.length > 1 ? `INITIATE BATCH (${selectedFiles.length} FILES) ➔` : 'INITIATE TRANSFER ➔'}
           </button>
         </div>
       </div>
     </div>
   );
 };
+

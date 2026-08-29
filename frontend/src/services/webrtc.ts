@@ -287,7 +287,8 @@ export class WebRTCManager {
     transfer: TransferItem,
     onProgress: (progress: number, speed: number, eta: number, chunks: number) => void,
     onComplete: (hash: string) => void,
-    onError: (err: string) => void
+    onError: (err: string) => void,
+    batchInfo?: { batchId?: string; batchIndex?: number; batchTotal?: number }
   ) {
     try {
       this.activeTransfers.add(transfer.id);
@@ -316,6 +317,9 @@ export class WebRTCManager {
           chunkSize: CHUNK_SIZE,
           mimeType: resolvedMime,
           encryptionKey: keyHex,
+          batchId: batchInfo?.batchId || transfer.batchId,
+          batchIndex: batchInfo?.batchIndex || transfer.batchIndex,
+          batchTotal: batchInfo?.batchTotal || transfer.batchTotal,
         },
       });
 

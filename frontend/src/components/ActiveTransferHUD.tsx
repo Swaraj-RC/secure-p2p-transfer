@@ -38,8 +38,9 @@ export const ActiveTransferHUD: React.FC<ActiveTransferHUDProps> = ({
           <div className="hud-modal-title">
             <Activity size={20} className={isFailed ? 'hud-status-failed' : 'hud-status-active'} />
             <span>
-              {transfer.direction === 'send' ? 'TRANSMITTING CHUNKS' : 'RECEIVING CHUNKS'} //{' '}
-              {transfer.status.toUpperCase()}
+              {transfer.batchTotal && transfer.batchTotal > 1
+                ? `BATCH [${transfer.batchIndex || 1}/${transfer.batchTotal}] // ${transfer.direction === 'send' ? 'TRANSMITTING' : 'RECEIVING'}`
+                : `${transfer.direction === 'send' ? 'TRANSMITTING CHUNKS' : 'RECEIVING CHUNKS'} // ${transfer.status.toUpperCase()}`}
             </span>
           </div>
           {!isComplete && !isFailed && onCancel ? (
@@ -64,8 +65,24 @@ export const ActiveTransferHUD: React.FC<ActiveTransferHUDProps> = ({
         {/* File & Peer Info */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <div style={{ color: '#fff', fontSize: '1.15rem', fontWeight: 600 }}>
-              {transfer.fileName}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <div style={{ color: '#fff', fontSize: '1.15rem', fontWeight: 600 }}>
+                {transfer.fileName}
+              </div>
+              {transfer.batchTotal && transfer.batchTotal > 1 && (
+                <span
+                  style={{
+                    background: 'rgba(255,107,0,0.15)',
+                    border: '1px solid var(--hud-orange)',
+                    color: 'var(--hud-orange)',
+                    fontSize: '0.7rem',
+                    padding: '0.15rem 0.4rem',
+                    fontWeight: 700,
+                  }}
+                >
+                  FILE {transfer.batchIndex} OF {transfer.batchTotal}
+                </span>
+              )}
             </div>
             <div style={{ color: 'var(--hud-text-dim)', fontSize: '0.8rem', marginTop: '0.2rem' }}>
               TARGET NODE: {transfer.peerName.startsWith('IP:') ? `Node-${transfer.peerId.slice(0, 6).toUpperCase()}` : transfer.peerName || `Node-${transfer.peerId.slice(0, 6)}`}

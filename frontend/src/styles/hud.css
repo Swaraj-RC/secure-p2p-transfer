@@ -638,6 +638,20 @@ body, html {
   to { opacity: 1; }
 }
 
+/* File Deck custom scrollbar */
+.hud-file-deck::-webkit-scrollbar {
+  width: 5px;
+}
+
+.hud-file-deck::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.hud-file-deck::-webkit-scrollbar-thumb {
+  background: var(--hud-orange);
+  border-radius: 2px;
+}
+
 /* Responsive Breakpoints */
 @media (max-width: 768px) {
   .hud-container {

@@ -38,6 +38,9 @@ export interface TransferItem {
   startedAt: number;
   completedAt?: number;
   blobUrl?: string;
+  batchId?: string;
+  batchIndex?: number;
+  batchTotal?: number;
 }
 
 export interface SignalingMessage<T = any> {
