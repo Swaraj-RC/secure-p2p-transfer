@@ -24,7 +24,7 @@ const RTC_CONFIG: RTCConfiguration = {
   rtcpMuxPolicy: 'require',
 };
 
-export const CHUNK_SIZE = 256 * 1024; // 256 KB per chunk
+export const CHUNK_SIZE = 64 * 1024; // 64 KB — stays under 262144B SCTP max-message-size (64K + 36B overhead = 65572B ✓)
 const HIGH_WATERMARK = 16 * 1024 * 1024; // 16 MB — fill the pipe, drain when full
 
 // ─── Off-Main-Thread Crypto Worker ────────────────────────────────────────────
