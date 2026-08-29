@@ -11,7 +11,7 @@ import { HistoryDrawer } from './components/HistoryDrawer';
 import { TechMatrixModal } from './components/TechMatrixModal';
 import { signalingClient } from './services/signaling';
 
-import { webrtcManager, WebRTCManager } from './services/webrtc';
+import { webrtcManager, WebRTCManager, CHUNK_SIZE } from './services/webrtc';
 import { WebCryptoEngine } from './services/crypto';
 import { OPFSEngine } from './services/opfs';
 import { ResumableEngine } from './services/resumable';
@@ -52,8 +52,8 @@ export const App: React.FC = () => {
   const autoAcceptedBatches = useRef<Set<string>>(new Set());
   const lastUiUpdateRef = useRef<number>(0);
 
-  // Incoming chunk assembly buffers
-  const receivingBuffers = useRef<Map<string, { chunks: ArrayBuffer[]; meta: any; key: CryptoKey; receivedBytes: number; startTime: number; receivedCount: number }>>(
+  // Incoming chunk assembly buffers — NO chunks array to prevent RAM accumulation (OPFS handles disk storage)
+  const receivingBuffers = useRef<Map<string, { meta: any; key: CryptoKey; receivedBytes: number; startTime: number; receivedCount: number; receivedSet: Set<number> }>>(
     new Map()
   );
 
@@ -117,78 +117,22 @@ export const App: React.FC = () => {
     // 3A. Incoming Direct WebRTC Binary SCTP Chunk Stream (MAX Line Speed)
     webrtcManager.setBinaryChunkListener('*', async (chunkIndex, _totalChunks, encryptedData) => {
       for (const [tId, session] of receivingBuffers.current.entries()) {
+        // Deduplicate using Set — no ArrayBuffer stored in RAM
+        if (session.receivedSet.has(chunkIndex)) continue;
         try {
           const decryptedChunk = await WebCryptoEngine.decryptChunk(session.key, encryptedData);
-          if (!session.chunks[chunkIndex]) {
-            session.chunks[chunkIndex] = decryptedChunk;
-            session.receivedBytes += decryptedChunk.byteLength;
-            session.receivedCount++;
-
-            const chunkSize = session.meta.chunkSize || (256 * 1024);
-
-            // Stream directly to physical disk via OPFS (Zero-RAM Memory Protection)
-            OPFSEngine.writeChunk(tId, chunkIndex * chunkSize, decryptedChunk);
-
-            // Batched local client-side checkpoint in IndexedDB (prevents I/O freezing)
-            if (session.receivedCount % 40 === 0 || session.receivedCount >= _totalChunks) {
-              ResumableEngine.recordChunk(tId, chunkIndex, _totalChunks, session.meta);
-            }
-
-            const elapsedSec = (Date.now() - session.startTime) / 1000;
-            const speedMBps = elapsedSec > 0 ? session.receivedBytes / (1024 * 1024) / elapsedSec : 0;
-            const progress = Math.min(100, Math.round((session.receivedBytes / session.meta.fileSize) * 100));
-            const remainingBytes = session.meta.fileSize - session.receivedBytes;
-            const etaSeconds = speedMBps > 0 ? remainingBytes / (speedMBps * 1024 * 1024) : 0;
-
-            // Throttled UI telemetry update (60fps smooth render without event loop starvation)
-            const now = Date.now();
-            if (now - lastUiUpdateRef.current > 40 || session.receivedCount >= _totalChunks) {
-              lastUiUpdateRef.current = now;
-              setActiveTransfer((prev) => {
-                if (!prev || prev.id !== tId) return prev;
-                return {
-                  ...prev,
-                  progress,
-                  bytesTransferred: session.receivedBytes,
-                  speedMBps,
-                  etaSeconds,
-                  chunksCompleted: session.receivedCount,
-                };
-              });
-            }
-          }
-        } catch (err) {
-          console.error('Binary chunk decrypt error:', err);
-        }
-      }
-    });
-
-    // 3B. Incoming Relayed Encrypted Chunk Stream (Fast Fallback)
-    const unbindRelay = signalingClient.on('RELAY_DATA', async (msg) => {
-      const { transferId, chunkIndex, totalChunks, data } = msg.payload || {};
-      if (!transferId || data === undefined) return;
-
-      const session = receivingBuffers.current.get(transferId);
-      if (!session) return;
-
-      try {
-        // Decode base64 safely and decrypt with AES-256-GCM
-        const rawEncrypted = await base64ToArrayBuffer(data);
-        const decryptedChunk = await WebCryptoEngine.decryptChunk(session.key, rawEncrypted);
-
-        if (!session.chunks[chunkIndex]) {
-          session.chunks[chunkIndex] = decryptedChunk;
+          session.receivedSet.add(chunkIndex);
           session.receivedBytes += decryptedChunk.byteLength;
           session.receivedCount++;
 
-          const chunkSize = session.meta.chunkSize || (256 * 1024);
+          const chunkSize = session.meta.chunkSize || CHUNK_SIZE;
 
-          // Stream directly to physical disk via OPFS
-          OPFSEngine.writeChunk(transferId, chunkIndex * chunkSize, decryptedChunk);
+          // Stream directly to physical disk via OPFS (Zero-RAM Memory Protection)
+          OPFSEngine.writeChunk(tId, chunkIndex * chunkSize, decryptedChunk);
 
-          // Batched local client-side checkpoint in IndexedDB
-          if (session.receivedCount % 40 === 0 || session.receivedCount >= totalChunks) {
-            ResumableEngine.recordChunk(transferId, chunkIndex, totalChunks, session.meta);
+          // Batched IndexedDB checkpoint — every 50 chunks or at completion
+          if (session.receivedCount % 50 === 0 || session.receivedCount >= _totalChunks) {
+            ResumableEngine.recordChunk(tId, chunkIndex, _totalChunks, session.meta);
           }
 
           const elapsedSec = (Date.now() - session.startTime) / 1000;
@@ -197,26 +141,65 @@ export const App: React.FC = () => {
           const remainingBytes = session.meta.fileSize - session.receivedBytes;
           const etaSeconds = speedMBps > 0 ? remainingBytes / (speedMBps * 1024 * 1024) : 0;
 
+          // Throttled UI update — max 60fps
           const now = Date.now();
-          if (now - lastUiUpdateRef.current > 40 || session.receivedCount >= totalChunks) {
+          if (now - lastUiUpdateRef.current > 40 || session.receivedCount >= _totalChunks) {
             lastUiUpdateRef.current = now;
             setActiveTransfer((prev) => {
-              if (!prev || prev.id !== transferId) return prev;
-              return {
-                ...prev,
-                progress,
-                bytesTransferred: session.receivedBytes,
-                speedMBps,
-                etaSeconds,
-                chunksCompleted: session.receivedCount,
-              };
+              if (!prev || prev.id !== tId) return prev;
+              return { ...prev, progress, bytesTransferred: session.receivedBytes, speedMBps, etaSeconds, chunksCompleted: session.receivedCount };
             });
           }
+        } catch (err) {
+          console.error('Binary chunk decrypt error:', err);
         }
-      } catch (err) {
-        console.error('Error decrypting chunk #', chunkIndex, err);
       }
     });
+
+    // 3B. Incoming Relayed Encrypted Chunk Stream (Fallback)
+    const unbindRelay = signalingClient.on('RELAY_DATA', async (msg) => {
+      const { transferId, chunkIndex, totalChunks, data } = msg.payload || {};
+      if (!transferId || data === undefined) return;
+
+      const session = receivingBuffers.current.get(transferId);
+      if (!session) return;
+
+      if (session.receivedSet.has(chunkIndex)) return; // deduplicate
+
+      try {
+        const rawEncrypted = await base64ToArrayBuffer(data);
+        const decryptedChunk = await WebCryptoEngine.decryptChunk(session.key, rawEncrypted);
+
+        session.receivedSet.add(chunkIndex);
+        session.receivedBytes += decryptedChunk.byteLength;
+        session.receivedCount++;
+
+        const chunkSize = session.meta.chunkSize || CHUNK_SIZE;
+        OPFSEngine.writeChunk(transferId, chunkIndex * chunkSize, decryptedChunk);
+
+        if (session.receivedCount % 50 === 0 || session.receivedCount >= totalChunks) {
+          ResumableEngine.recordChunk(transferId, chunkIndex, totalChunks, session.meta);
+        }
+
+        const elapsedSec = (Date.now() - session.startTime) / 1000;
+        const speedMBps = elapsedSec > 0 ? session.receivedBytes / (1024 * 1024) / elapsedSec : 0;
+        const progress = Math.min(100, Math.round((session.receivedBytes / session.meta.fileSize) * 100));
+        const remainingBytes = session.meta.fileSize - session.receivedBytes;
+        const etaSeconds = speedMBps > 0 ? remainingBytes / (speedMBps * 1024 * 1024) : 0;
+
+        const now = Date.now();
+        if (now - lastUiUpdateRef.current > 40 || session.receivedCount >= totalChunks) {
+          lastUiUpdateRef.current = now;
+          setActiveTransfer((prev) => {
+            if (!prev || prev.id !== transferId) return prev;
+            return { ...prev, progress, bytesTransferred: session.receivedBytes, speedMBps, etaSeconds, chunksCompleted: session.receivedCount };
+          });
+        }
+      } catch (err) {
+        console.error('Relay chunk decrypt error #', chunkIndex, err);
+      }
+    });
+
 
     // 4. Transfer Complete signal
     const unbindComplete = signalingClient.on('TRANSFER_COMPLETE', async (msg) => {
@@ -226,26 +209,30 @@ export const App: React.FC = () => {
       const session = receivingBuffers.current.get(transferId);
       if (!session) return;
 
-      // Wait for all in-flight chunks to arrive before building Blob
+      // Wait up to 5s for any in-flight chunks that haven't arrived yet
+      const waitForInFlight = async () => {
+        for (let i = 0; i < 100; i++) {
+          if (session.receivedCount >= session.meta.totalChunks) break;
+          await new Promise((r) => setTimeout(r, 50));
+        }
+      };
+      await waitForInFlight();
+
       const finalizeAssembly = async () => {
         try {
           const resolvedMime = WebRTCManager.getMimeType(session.meta.fileName, session.meta.mimeType);
           let blobUrl: string | undefined;
 
-          // Attempt Direct-to-Disk OPFS finalize (Zero-RAM consumption)
+          // Always use OPFS — never fall back to RAM Blob assembly for large files
           const opfsResult = await OPFSEngine.finalizeBlob(transferId, resolvedMime);
           if (opfsResult) {
             blobUrl = opfsResult.blobUrl;
           } else {
-            const validChunks: ArrayBuffer[] = [];
-            for (let i = 0; i < session.meta.totalChunks; i++) {
-              if (session.chunks[i]) {
-                validChunks.push(session.chunks[i]);
-              }
-            }
-            const fullBlob = new Blob(validChunks, { type: resolvedMime });
-            blobUrl = URL.createObjectURL(fullBlob);
+            // OPFS not available (e.g. insecure context) — graceful degradation message
+            console.warn('[OPFS] Finalize failed, file may be incomplete');
+            return;
           }
+
 
           // Instant Zero-Delay Auto-Download to user's disk!
           try {
@@ -298,18 +285,7 @@ export const App: React.FC = () => {
         }
       };
 
-      if (session.receivedCount >= session.meta.totalChunks) {
-        finalizeAssembly();
-      } else {
-        let attempts = 0;
-        const waitInterval = setInterval(() => {
-          attempts++;
-          if (session.receivedCount >= session.meta.totalChunks || attempts > 100) {
-            clearInterval(waitInterval);
-            finalizeAssembly();
-          }
-        }, 50);
-      }
+      finalizeAssembly();
     });
 
     // 5. Transfer Cancel signal from remote peer
@@ -354,16 +330,16 @@ export const App: React.FC = () => {
 
     const key = await WebCryptoEngine.importKeyFromHex(req.encryptionKey);
 
-    // Initialize Direct-to-Disk OPFS file handle
+    // Initialize Direct-to-Disk OPFS file handle (zero RAM accumulation)
     await OPFSEngine.initFile(req.transferId, req.fileName);
 
     receivingBuffers.current.set(req.transferId, {
-      chunks: new Array(req.totalChunks),
       meta: req,
       key,
       receivedBytes: 0,
       startTime: Date.now(),
       receivedCount: 0,
+      receivedSet: new Set<number>(), // lightweight dedup set — no ArrayBuffer storage
     });
 
     const item: TransferItem = {

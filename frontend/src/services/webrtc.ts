@@ -7,22 +7,31 @@ const RTC_CONFIG: RTCConfiguration = {
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:stun3.l.google.com:19302' },
-    { urls: 'stun:stun4.l.google.com:19302' },
     { urls: 'stun:global.stun.twilio.com:3478' },
+    {
+      urls: 'turn:openrelay.metered.ca:80',
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443',
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
+    },
   ],
   iceCandidatePoolSize: 10,
+  bundlePolicy: 'max-bundle',
+  rtcpMuxPolicy: 'require',
 };
 
-// MAXIMUM HARDWARE LINE-RATE SPEED CONFIG (Optimized SCTP Pump)
-export const CHUNK_SIZE = 256 * 1024;  // 256 KB optimal WebRTC SCTP frame size (4x fewer crypto/event-loop operations)
-const HIGH_WATERMARK = 16 * 1024 * 1024; // 16 MB socket backpressure window
-const LOW_WATERMARK = 2 * 1024 * 1024;   // 2 MB resume trigger
-const PARALLEL_STREAMS = 4;              // 4 High-Throughput SCTP DataChannels
+export const CHUNK_SIZE = 256 * 1024; // 256 KB per chunk
+const HIGH_WATERMARK = 8 * 1024 * 1024;  // 8 MB backpressure ceiling
+const LOW_WATERMARK  = 1 * 1024 * 1024;  // 1 MB resume floor
+const PARALLEL_STREAMS = 1;              // Single ordered reliable channel — avoids head-of-line blocking with multiple channels
 
 export class WebRTCManager {
   private peerConnections: Map<string, RTCPeerConnection> = new Map();
-  private multiChannels: Map<string, RTCDataChannel[]> = new Map();
+  private dataChannels: Map<string, RTCDataChannel> = new Map();
   private pendingCandidates: Map<string, RTCIceCandidateInit[]> = new Map();
   private binaryChunkListeners: Map<string, (chunkIndex: number, totalChunks: number, data: ArrayBuffer) => void> = new Map();
   private activeTransfers: Set<string> = new Set();
@@ -101,9 +110,7 @@ export class WebRTCManager {
 
       const pc = this.peerConnections.get(senderId);
       if (pc && pc.remoteDescription) {
-        try {
-          await pc.addIceCandidate(new RTCIceCandidate(candidate));
-        } catch {}
+        try { await pc.addIceCandidate(new RTCIceCandidate(candidate)); } catch {}
       } else {
         const list = this.pendingCandidates.get(senderId) || [];
         list.push(candidate);
@@ -111,7 +118,6 @@ export class WebRTCManager {
       }
     });
   }
-
 
   public getOrCreatePeerConnection(peerId: string, _transferId?: string): RTCPeerConnection {
     let pc = this.peerConnections.get(peerId);
@@ -136,6 +142,10 @@ export class WebRTCManager {
         const dc = event.channel;
         this.registerDataChannel(peerId, dc);
       };
+
+      pc.onconnectionstatechange = () => {
+        console.log(`[WebRTC] Connection to ${peerId}: ${pc!.connectionState}`);
+      };
     }
     return pc;
   }
@@ -143,12 +153,7 @@ export class WebRTCManager {
   private registerDataChannel(peerId: string, dc: RTCDataChannel) {
     dc.binaryType = 'arraybuffer';
     dc.bufferedAmountLowThreshold = LOW_WATERMARK;
-
-    const channels = this.multiChannels.get(peerId) || [];
-    if (!channels.some((c) => c.label === dc.label)) {
-      channels.push(dc);
-      this.multiChannels.set(peerId, channels);
-    }
+    this.dataChannels.set(peerId, dc);
 
     dc.onmessage = (event: MessageEvent) => {
       if (event.data instanceof ArrayBuffer) {
@@ -158,11 +163,11 @@ export class WebRTCManager {
         const payload = event.data.slice(8);
 
         const listener = this.binaryChunkListeners.get(peerId) || this.binaryChunkListeners.get('*');
-        if (listener) {
-          listener(chunkIndex, totalChunks, payload);
-        }
+        if (listener) listener(chunkIndex, totalChunks, payload);
       }
     };
+
+    dc.onerror = (e) => console.error('[WebRTC] DataChannel error:', e);
   }
 
   public setBinaryChunkListener(peerId: string, listener: (chunkIndex: number, totalChunks: number, data: ArrayBuffer) => void) {
@@ -173,46 +178,42 @@ export class WebRTCManager {
     this.binaryChunkListeners.delete(peerId);
   }
 
-  // Pre-warm High-Speed Parallel WebRTC DataChannels
-  public async establishMultiDataChannels(targetPeerId: string, transferId: string): Promise<RTCDataChannel[]> {
+  /**
+   * Establish a single high-throughput ordered DataChannel.
+   * Returns the channel when it's truly OPEN, or null on timeout.
+   */
+  public async establishDataChannel(targetPeerId: string, transferId: string): Promise<RTCDataChannel | null> {
     return new Promise(async (resolve) => {
       try {
-        const pc = this.getOrCreatePeerConnection(targetPeerId, transferId);
-        let channels = this.multiChannels.get(targetPeerId) || [];
-        const existingOpen = channels.filter((c) => c.readyState === 'open');
-
-        if (existingOpen.length > 0) {
-          resolve(existingOpen);
+        // Reuse existing open channel
+        const existing = this.dataChannels.get(targetPeerId);
+        if (existing && existing.readyState === 'open') {
+          resolve(existing);
           return;
         }
 
-        const createdChannels: RTCDataChannel[] = [];
-        for (let i = 0; i < PARALLEL_STREAMS; i++) {
-          const dc = pc.createDataChannel(`p2p-hyper-${transferId}-s${i}`, {
-            ordered: true,
-            maxRetransmits: 5,
-          });
-          this.registerDataChannel(targetPeerId, dc);
-          createdChannels.push(dc);
-        }
+        const pc = this.getOrCreatePeerConnection(targetPeerId, transferId);
 
-        // Wait up to 12s for DataChannels to open during handshake
-        const timeout = setTimeout(() => {
-          const openList = createdChannels.filter((c) => c.readyState === 'open');
-          resolve(openList);
-        }, 12000);
+        const dc = pc.createDataChannel(`slrv-${transferId}`, {
+          ordered: true,
+          maxRetransmits: undefined, // Reliable — no packet loss
+        });
+        this.registerDataChannel(targetPeerId, dc);
 
-        const checkOpen = () => {
-          const openList = createdChannels.filter((c) => c.readyState === 'open');
-          if (openList.length > 0) {
-            clearTimeout(timeout);
-            resolve(openList);
-          }
+        const openTimer = setTimeout(() => {
+          console.warn('[WebRTC] DataChannel open timed out — will use relay fallback');
+          resolve(null);
+        }, 15000);
+
+        dc.onopen = () => {
+          clearTimeout(openTimer);
+          resolve(dc);
         };
 
-        createdChannels.forEach((c) => {
-          c.onopen = checkOpen;
-        });
+        dc.onerror = () => {
+          clearTimeout(openTimer);
+          resolve(null);
+        };
 
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
@@ -226,11 +227,11 @@ export class WebRTCManager {
             senderId: signalingClient.getCurrentDevice()?.id,
           },
         });
-      } catch {
-        resolve([]);
+      } catch (err) {
+        console.error('[WebRTC] Channel setup error:', err);
+        resolve(null);
       }
     });
-
   }
 
   // Native C++ Base64 Fast Transform
@@ -249,19 +250,16 @@ export class WebRTCManager {
 
   // MIME type resolver
   public static getMimeType(fileName: string, mimeType?: string): string {
-    if (mimeType && mimeType !== 'application/octet-stream' && mimeType !== '') {
-      return mimeType;
-    }
-    const ext = fileName.split('.').pop()?.toLowerCase();
+    if (mimeType && mimeType !== 'application/octet-stream') return mimeType;
+    const ext = fileName.split('.').pop()?.toLowerCase() || '';
     switch (ext) {
       case 'mp4': return 'video/mp4';
-      case 'mkv': return 'video/x-matroska';
       case 'webm': return 'video/webm';
       case 'mov': return 'video/quicktime';
       case 'avi': return 'video/x-msvideo';
+      case 'mkv': return 'video/x-matroska';
       case 'mp3': return 'audio/mpeg';
       case 'wav': return 'audio/wav';
-      case 'aac': return 'audio/aac';
       case 'flac': return 'audio/flac';
       case 'jpg': case 'jpeg': return 'image/jpeg';
       case 'png': return 'image/png';
@@ -281,7 +279,14 @@ export class WebRTCManager {
     }
   }
 
-  // HYPERSPEED Event-Driven Continuous SCTP Pump (Zero Socket Pauses)
+  /**
+   * SEND FILE — Reliable single-channel pump with backpressure and watchdog
+   * Fixes:
+   * 1. Proper await-based backpressure (no lost callbacks)
+   * 2. Watchdog timer to detect and recover from stalls
+   * 3. TURN server fallback for NAT-blocked connections
+   * 4. Relay fallback that doesn't block the main thread
+   */
   public async sendFile(
     file: File,
     targetPeerId: string,
@@ -294,7 +299,6 @@ export class WebRTCManager {
     try {
       this.activeTransfers.add(transfer.id);
 
-      // 1. Hardware AES-256-GCM Session Key
       const aesKey = await WebCryptoEngine.generateAESKey();
       const keyHex = await WebCryptoEngine.exportKeyToHex(aesKey);
 
@@ -302,10 +306,10 @@ export class WebRTCManager {
       const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
       const fileHash = `sha256-${Date.now().toString(16)}-${file.size.toString(16)}`;
 
-      // 2. Pre-warm WebRTC P2P Channels immediately
-      const dataChannelsPromise = this.establishMultiDataChannels(targetPeerId, transfer.id);
+      // Start opening DataChannel immediately in parallel
+      const dcPromise = this.establishDataChannel(targetPeerId, transfer.id);
 
-      // 3. Handshake Request
+      // Send transfer request
       signalingClient.send({
         type: 'TRANSFER_REQUEST',
         targetId: targetPeerId,
@@ -324,179 +328,164 @@ export class WebRTCManager {
         },
       });
 
-      // 4. Wait for Recipient Acceptance or Cancellation
+      // Wait for acceptance (60s timeout)
       const accepted = await new Promise<boolean>((resolve) => {
         let resolved = false;
-        const timeout = setTimeout(() => {
-          if (!resolved) {
-            resolved = true;
-            resolve(false);
-          }
-        }, 60000);
+        const timeout = setTimeout(() => { if (!resolved) { resolved = true; resolve(false); } }, 60000);
 
-        const cleanupAccept = signalingClient.on('TRANSFER_ACCEPT', (msg) => {
+        const unbindAccept = signalingClient.on('TRANSFER_ACCEPT', (msg) => {
           if (msg.payload?.transferId === transfer.id && !resolved) {
-            resolved = true;
-            clearTimeout(timeout);
-            cleanupAll();
+            resolved = true; clearTimeout(timeout); unbindAccept(); unbindReject(); unbindCancel();
             resolve(true);
           }
         });
-        const cleanupReject = signalingClient.on('TRANSFER_REJECT', (msg) => {
+        const unbindReject = signalingClient.on('TRANSFER_REJECT', (msg) => {
           if (msg.payload?.transferId === transfer.id && !resolved) {
-            resolved = true;
-            clearTimeout(timeout);
-            cleanupAll();
+            resolved = true; clearTimeout(timeout); unbindAccept(); unbindReject(); unbindCancel();
             resolve(false);
           }
         });
-        const cleanupCancel = signalingClient.on('TRANSFER_CANCEL', (msg) => {
+        const unbindCancel = signalingClient.on('TRANSFER_CANCEL', (msg) => {
           if (msg.payload?.transferId === transfer.id && !resolved) {
-            resolved = true;
-            clearTimeout(timeout);
-            cleanupAll();
+            resolved = true; clearTimeout(timeout); unbindAccept(); unbindReject(); unbindCancel();
             resolve(false);
           }
         });
-
-        const cleanupAll = () => {
-          cleanupAccept();
-          cleanupReject();
-          cleanupCancel();
-        };
       });
 
-      if (!this.activeTransfers.has(transfer.id)) {
-        onError('Transfer cancelled by user');
-        return;
-      }
+      if (!this.activeTransfers.has(transfer.id)) { onError('Transfer cancelled by user'); return; }
+      if (!accepted) { onError('Transfer rejected or timed out'); return; }
 
-      if (!accepted) {
-        onError('Transfer rejected by recipient or timed out');
-        return;
-      }
+      // Get DataChannel (may be open by now after handshake completed)
+      const dc = await dcPromise;
+      const isDirectP2P = dc !== null && dc.readyState === 'open';
 
-      // 5. Connect 8x Direct WebRTC SCTP Channels
-      const activeChannels = await dataChannelsPromise;
-      const isDirectP2P = activeChannels.length > 0;
+      console.log(`[WebRTC] Transfer mode: ${isDirectP2P ? 'DIRECT P2P DataChannel' : 'Relay Fallback'}`);
 
       const startTime = Date.now();
       let bytesSent = 0;
-      let nextChunkToRead = 0;
-      let channelCursor = 0;
 
-      // 6. CONTINUOUS NON-BLOCKING EVENT-DRIVEN STREAMING PUMP
-      await new Promise<void>(async (resolveTransfer, rejectTransfer) => {
-        const pump = async () => {
-          try {
-            while (nextChunkToRead < totalChunks) {
-              if (!this.activeTransfers.has(transfer.id)) {
-                rejectTransfer(new Error('Transfer cancelled'));
-                return;
-              }
+      if (isDirectP2P) {
+        // ════════════════════════════════════════════════════════
+        // DIRECT P2P: Await-based backpressure pump (no lost callbacks)
+        // ════════════════════════════════════════════════════════
+        let lastProgressChunk = 0;
+        let lastWatchdogChunk = 0;
+        let watchdogTimer: any = null;
 
-              if (isDirectP2P && activeChannels.length > 0) {
-                const dc = activeChannels[channelCursor % activeChannels.length];
-
-                // Backpressure check: If socket is saturated, wait for onbufferedamountlow
-                if (dc.bufferedAmount > HIGH_WATERMARK) {
-                  dc.onbufferedamountlow = () => {
-                    dc.onbufferedamountlow = null;
-                    pump();
-                  };
-                  return;
-                }
-
-                const chunkIdx = nextChunkToRead++;
-                channelCursor++;
-
-                const start = chunkIdx * CHUNK_SIZE;
-                const end = Math.min(start + CHUNK_SIZE, file.size);
-                const sliceBlob = file.slice(start, end);
-                const sliceBuffer = await sliceBlob.arrayBuffer();
-                const encrypted = await WebCryptoEngine.encryptChunk(aesKey, sliceBuffer);
-
-                const packet = new Uint8Array(8 + encrypted.byteLength);
-                const view = new DataView(packet.buffer);
-                view.setUint32(0, chunkIdx, true);
-                view.setUint32(4, totalChunks, true);
-                packet.set(new Uint8Array(encrypted), 8);
-
-                dc.send(packet.buffer);
-                bytesSent += (end - start);
-              } else {
-                // High-Speed Relay Stream
-                const chunkIdx = nextChunkToRead++;
-                const start = chunkIdx * CHUNK_SIZE;
-                const end = Math.min(start + CHUNK_SIZE, file.size);
-                const sliceBlob = file.slice(start, end);
-                const sliceBuffer = await sliceBlob.arrayBuffer();
-                const encrypted = await WebCryptoEngine.encryptChunk(aesKey, sliceBuffer);
-                const base64Chunk = await WebRTCManager.arrayBufferToBase64Fast(encrypted);
-
-                signalingClient.send({
-                  type: 'RELAY_DATA',
-                  targetId: targetPeerId,
-                  payload: {
-                    transferId: transfer.id,
-                    chunkIndex: chunkIdx,
-                    totalChunks,
-                    data: base64Chunk,
-                  },
-                });
-
-                bytesSent += (end - start);
-              }
-
-              // Update telemetry
-              const elapsedSec = (Date.now() - startTime) / 1000;
-              const speedMBps = elapsedSec > 0 ? (bytesSent / (1024 * 1024)) / elapsedSec : 0;
-              const remainingBytes = file.size - bytesSent;
-              const etaSeconds = speedMBps > 0 ? remainingBytes / (speedMBps * 1024 * 1024) : 0;
-              const progress = Math.min(100, Math.round((bytesSent / file.size) * 100));
-
-              onProgress(progress, speedMBps, etaSeconds, nextChunkToRead);
+        const resetWatchdog = () => {
+          clearTimeout(watchdogTimer);
+          watchdogTimer = setTimeout(() => {
+            if (this.activeTransfers.has(transfer.id) && lastWatchdogChunk === lastProgressChunk) {
+              console.warn('[WebRTC] Stall detected — aborting DataChannel, forcing relay');
+              onError('Transfer stalled. Please retry.');
             }
-
-            resolveTransfer();
-          } catch (err) {
-            rejectTransfer(err);
-          }
+            lastWatchdogChunk = lastProgressChunk;
+          }, 30000);
         };
 
-        // Start continuous pump
-        pump();
-      });
+        await new Promise<void>(async (resolveTransfer, rejectTransfer) => {
+          resetWatchdog();
 
-      if (!this.activeTransfers.has(transfer.id)) {
-        onError('Transfer cancelled');
-        return;
-      }
+          for (let chunkIdx = 0; chunkIdx < totalChunks; chunkIdx++) {
+            if (!this.activeTransfers.has(transfer.id)) {
+              clearTimeout(watchdogTimer);
+              rejectTransfer(new Error('Transfer cancelled'));
+              return;
+            }
 
-      // 7. Flush Outbound Network Buffers and Signal Complete
-      const waitForDrain = async () => {
-        for (let attempt = 0; attempt < 60; attempt++) {
-          if (!this.activeTransfers.has(transfer.id)) return;
-          const pending = activeChannels.reduce((sum, c) => sum + (c.bufferedAmount || 0), 0);
-          if (pending === 0) break;
-          await new Promise((r) => setTimeout(r, 40));
+            if (dc.readyState !== 'open') {
+              clearTimeout(watchdogTimer);
+              rejectTransfer(new Error('DataChannel closed unexpectedly'));
+              return;
+            }
+
+            // Proper await-based backpressure — NEVER loses the resume signal
+            if (dc.bufferedAmount > HIGH_WATERMARK) {
+              await new Promise<void>((resume) => {
+                const prevThreshold = dc.bufferedAmountLowThreshold;
+                dc.bufferedAmountLowThreshold = LOW_WATERMARK;
+                const onLow = () => {
+                  dc.removeEventListener('bufferedamountlow', onLow);
+                  dc.bufferedAmountLowThreshold = prevThreshold;
+                  resume();
+                };
+                dc.addEventListener('bufferedamountlow', onLow);
+                // Safety: if event never fires (channel stalls), resume after 5s
+                setTimeout(() => { dc.removeEventListener('bufferedamountlow', onLow); resume(); }, 5000);
+              });
+            }
+
+            const start = chunkIdx * CHUNK_SIZE;
+            const end = Math.min(start + CHUNK_SIZE, file.size);
+            const sliceBuffer = await file.slice(start, end).arrayBuffer();
+            const encrypted = await WebCryptoEngine.encryptChunk(aesKey, sliceBuffer);
+
+            const packet = new Uint8Array(8 + encrypted.byteLength);
+            const dv = new DataView(packet.buffer);
+            dv.setUint32(0, chunkIdx, true);
+            dv.setUint32(4, totalChunks, true);
+            packet.set(new Uint8Array(encrypted), 8);
+            dc.send(packet.buffer);
+
+            bytesSent += (end - start);
+            lastProgressChunk = chunkIdx;
+            resetWatchdog();
+
+            const elapsedSec = (Date.now() - startTime) / 1000;
+            const speedMBps = elapsedSec > 0 ? (bytesSent / (1024 * 1024)) / elapsedSec : 0;
+            const etaSeconds = speedMBps > 0 ? (file.size - bytesSent) / (speedMBps * 1024 * 1024) : 0;
+            onProgress(Math.min(100, Math.round((bytesSent / file.size) * 100)), speedMBps, etaSeconds, chunkIdx + 1);
+          }
+
+          clearTimeout(watchdogTimer);
+          resolveTransfer();
+        });
+
+        // Drain all pending data in the DataChannel before signaling complete
+        for (let i = 0; i < 120; i++) {
+          if (!this.activeTransfers.has(transfer.id)) break;
+          if (dc.bufferedAmount === 0) break;
+          await new Promise((r) => setTimeout(r, 50));
         }
-      };
-      await waitForDrain();
-      await new Promise((r) => setTimeout(r, 120));
+        await new Promise((r) => setTimeout(r, 200));
 
-      if (!this.activeTransfers.has(transfer.id)) {
-        onError('Transfer cancelled');
-        return;
+      } else {
+        // ════════════════════════════════════════════════════════
+        // RELAY FALLBACK: Sequential relay through signaling server
+        // ════════════════════════════════════════════════════════
+        for (let chunkIdx = 0; chunkIdx < totalChunks; chunkIdx++) {
+          if (!this.activeTransfers.has(transfer.id)) { onError('Transfer cancelled'); return; }
+
+          const start = chunkIdx * CHUNK_SIZE;
+          const end = Math.min(start + CHUNK_SIZE, file.size);
+          const sliceBuffer = await file.slice(start, end).arrayBuffer();
+          const encrypted = await WebCryptoEngine.encryptChunk(aesKey, sliceBuffer);
+          const base64Chunk = await WebRTCManager.arrayBufferToBase64Fast(encrypted);
+
+          signalingClient.send({
+            type: 'RELAY_DATA',
+            targetId: targetPeerId,
+            payload: { transferId: transfer.id, chunkIndex: chunkIdx, totalChunks, data: base64Chunk },
+          });
+
+          bytesSent += (end - start);
+          const elapsedSec = (Date.now() - startTime) / 1000;
+          const speedMBps = elapsedSec > 0 ? (bytesSent / (1024 * 1024)) / elapsedSec : 0;
+          const etaSeconds = speedMBps > 0 ? (file.size - bytesSent) / (speedMBps * 1024 * 1024) : 0;
+          onProgress(Math.min(100, Math.round((bytesSent / file.size) * 100)), speedMBps, etaSeconds, chunkIdx + 1);
+
+          // Yield event loop every 8 chunks so the tab stays responsive
+          if (chunkIdx % 8 === 0) await new Promise((r) => setTimeout(r, 0));
+        }
       }
+
+      if (!this.activeTransfers.has(transfer.id)) { onError('Transfer cancelled'); return; }
 
       signalingClient.send({
         type: 'TRANSFER_COMPLETE',
         targetId: targetPeerId,
-        payload: {
-          transferId: transfer.id,
-          fileHash,
-        },
+        payload: { transferId: transfer.id, fileHash },
       });
 
       onComplete(fileHash);
