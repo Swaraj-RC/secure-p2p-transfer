@@ -424,20 +424,10 @@ export class WebRTCManager {
               return;
             }
 
-            // Proper await-based backpressure — NEVER loses the resume signal
-            if (activeDc.bufferedAmount > HIGH_WATERMARK) {
-              await new Promise<void>((resume) => {
-                const prevThreshold = activeDc.bufferedAmountLowThreshold;
-                activeDc.bufferedAmountLowThreshold = LOW_WATERMARK;
-                const onLow = () => {
-                  activeDc.removeEventListener('bufferedamountlow', onLow);
-                  activeDc.bufferedAmountLowThreshold = prevThreshold;
-                  resume();
-                };
-                activeDc.addEventListener('bufferedamountlow', onLow);
-                // Safety: if event never fires (channel stalls), resume after 5s
-                setTimeout(() => { activeDc.removeEventListener('bufferedamountlow', onLow); resume(); }, 5000);
-              });
+            // Bulletproof Non-Blocking Backpressure: Yield 6ms until buffer drains below ceiling
+            while (activeDc.bufferedAmount > HIGH_WATERMARK) {
+              if (!this.activeTransfers.has(transfer.id) || activeDc.readyState !== 'open') break;
+              await new Promise((r) => setTimeout(r, 6));
             }
 
             const start = chunkIdx * CHUNK_SIZE;
