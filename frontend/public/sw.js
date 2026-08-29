@@ -1,6 +1,6 @@
-// SLRV BEAM High-Speed Offline Service Worker
-const CACHE_NAME = 'slrv-beam-cache-v1';
-const ASSETS_TO_CACHE = [
+// SLRV BEAM Network-First High-Speed Service Worker
+const CACHE_NAME = 'slrv-beam-cache-v2';
+const STATIC_ASSETS = [
   '/',
   '/index.html',
   '/manifest.json',
@@ -8,10 +8,9 @@ const ASSETS_TO_CACHE = [
 ];
 
 self.addEventListener('install', (event) => {
+  self.skipWaiting();
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(ASSETS_TO_CACHE);
-    }).then(() => self.skipWaiting())
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
   );
 });
 
@@ -26,25 +25,21 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // Pass through WebSocket and API requests cleanly
+  // Always bypass cache for WebSockets and APIs
   if (event.request.url.includes('/ws') || event.request.url.includes('/api/')) {
     return;
   }
 
-  // Stale-while-revalidate for static assets
+  // Network-First strategy: fetch latest build, fallback to cache if completely offline
   event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      const fetchPromise = fetch(event.request).then((networkResponse) => {
-        if (networkResponse && networkResponse.status === 200) {
+    fetch(event.request)
+      .then((networkResponse) => {
+        if (networkResponse && networkResponse.status === 200 && event.request.method === 'GET') {
           const responseToCache = networkResponse.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, responseToCache);
-          });
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseToCache));
         }
         return networkResponse;
-      }).catch(() => cachedResponse);
-
-      return cachedResponse || fetchPromise;
-    })
+      })
+      .catch(() => caches.match(event.request))
   );
 });
