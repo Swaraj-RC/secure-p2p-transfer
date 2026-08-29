@@ -25,10 +25,77 @@ const RTC_CONFIG: RTCConfiguration = {
 };
 
 export const CHUNK_SIZE = 256 * 1024; // 256 KB per chunk
-const HIGH_WATERMARK = 8 * 1024 * 1024;  // 8 MB backpressure ceiling
-const LOW_WATERMARK  = 1 * 1024 * 1024;  // 1 MB resume floor
-const PARALLEL_STREAMS = 1;              // Single ordered reliable channel — avoids head-of-line blocking with multiple channels
+const HIGH_WATERMARK = 16 * 1024 * 1024; // 16 MB — fill the pipe, drain when full
 
+// ─── Off-Main-Thread Crypto Worker ────────────────────────────────────────────
+class CryptoWorkerPool {
+  private worker: Worker | null = null;
+  private pending: Map<number, { resolve: (d: ArrayBuffer) => void; reject: (e: Error) => void }> = new Map();
+  private nextId = 0;
+  private ready = false;
+  private readyPromise: Promise<void>;
+  private readyResolve!: () => void;
+
+  constructor() {
+    this.readyPromise = new Promise((r) => { this.readyResolve = r; });
+    try {
+      this.worker = new Worker('/crypto-worker.js');
+      this.worker.onmessage = (e) => {
+        const { type, id, data, error } = e.data;
+        if (type === 'KEY_READY') { this.ready = true; this.readyResolve(); return; }
+        const p = this.pending.get(id);
+        if (!p) return;
+        this.pending.delete(id);
+        if (type === 'ERROR') p.reject(new Error(error));
+        else p.resolve(data as ArrayBuffer);
+      };
+      this.worker.onerror = (e) => {
+        console.warn('[CryptoWorker] Worker error, falling back to main thread:', e);
+        this.worker = null;
+        this.readyResolve();
+      };
+    } catch {
+      this.readyResolve();
+    }
+  }
+
+  async importKey(keyHex: string) {
+    if (!this.worker) { this.readyResolve(); return; }
+    const id = this.nextId++;
+    this.worker.postMessage({ type: 'IMPORT_KEY', id, keyHex });
+    await this.readyPromise;
+  }
+
+  async encrypt(key: CryptoKey, data: ArrayBuffer): Promise<ArrayBuffer> {
+    if (!this.worker || !this.ready) {
+      return WebCryptoEngine.encryptChunk(key, data);
+    }
+    const id = this.nextId++;
+    return new Promise((resolve, reject) => {
+      this.pending.set(id, { resolve, reject });
+      this.worker!.postMessage({ type: 'ENCRYPT', id, data }, [data]);
+    });
+  }
+
+  async decrypt(key: CryptoKey, data: ArrayBuffer): Promise<ArrayBuffer> {
+    if (!this.worker || !this.ready) {
+      return WebCryptoEngine.decryptChunk(key, data);
+    }
+    const id = this.nextId++;
+    return new Promise((resolve, reject) => {
+      this.pending.set(id, { resolve, reject });
+      this.worker!.postMessage({ type: 'DECRYPT', id, data }, [data]);
+    });
+  }
+
+  terminate() {
+    this.worker?.terminate();
+    this.worker = null;
+    this.ready = false;
+  }
+}
+
+// ─── WebRTC Manager ───────────────────────────────────────────────────────────
 export class WebRTCManager {
   private peerConnections: Map<string, RTCPeerConnection> = new Map();
   private dataChannels: Map<string, RTCDataChannel> = new Map();
@@ -152,7 +219,6 @@ export class WebRTCManager {
 
   private registerDataChannel(peerId: string, dc: RTCDataChannel) {
     dc.binaryType = 'arraybuffer';
-    dc.bufferedAmountLowThreshold = LOW_WATERMARK;
     this.dataChannels.set(peerId, dc);
 
     dc.onmessage = (event: MessageEvent) => {
@@ -178,10 +244,6 @@ export class WebRTCManager {
     this.binaryChunkListeners.delete(peerId);
   }
 
-  /**
-   * Establish a single high-throughput ordered DataChannel.
-   * Returns the channel when it's truly OPEN, or null on timeout.
-   */
   public async establishDataChannel(targetPeerId: string, transferId: string): Promise<RTCDataChannel | null> {
     return new Promise(async (resolve) => {
       try {
@@ -293,11 +355,15 @@ export class WebRTCManager {
     onError: (err: string) => void,
     batchInfo?: { batchId?: string; batchIndex?: number; batchTotal?: number }
   ) {
+    const cryptoWorker = new CryptoWorkerPool();
     try {
       this.activeTransfers.add(transfer.id);
 
       const aesKey = await WebCryptoEngine.generateAESKey();
       const keyHex = await WebCryptoEngine.exportKeyToHex(aesKey);
+
+      // Boot crypto worker with the key in parallel
+      cryptoWorker.importKey(keyHex);
 
       const resolvedMime = WebRTCManager.getMimeType(file.name, file.type);
       const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
@@ -378,7 +444,6 @@ export class WebRTCManager {
       // 4. Ensure DataChannel is ready
       let dc = await dcPromise;
       if (!dc || dc.readyState !== 'open') {
-        // Try establishing one more time if needed
         dc = await this.establishDataChannel(targetPeerId, transfer.id);
       }
 
@@ -391,56 +456,68 @@ export class WebRTCManager {
 
       if (isDirectP2P && activeDc) {
         // ════════════════════════════════════════════════════════
-        // DIRECT P2P: High-Throughput Continuous SCTP Stream
+        // DIRECT P2P: Pipelined encryption + SCTP stream pump
+        // Encrypts next chunk on worker WHILE current chunk is in flight.
         // ════════════════════════════════════════════════════════
-        await new Promise<void>(async (resolveTransfer, rejectTransfer) => {
-          for (let chunkIdx = 0; chunkIdx < totalChunks; chunkIdx++) {
-            if (!this.activeTransfers.has(transfer.id)) {
-              rejectTransfer(new Error('Transfer cancelled by user'));
-              return;
-            }
 
-            if (activeDc.readyState !== 'open') {
-              rejectTransfer(new Error('DataChannel disconnected'));
-              return;
-            }
+        // Pre-encrypt the first chunk before the loop starts
+        const readSlice = (idx: number): Promise<ArrayBuffer> => {
+          const start = idx * CHUNK_SIZE;
+          const end = Math.min(start + CHUNK_SIZE, file.size);
+          return file.slice(start, end).arrayBuffer();
+        };
 
-            // Non-Blocking Backpressure: Yield if socket buffer reaches high-watermark
-            while (activeDc.bufferedAmount > HIGH_WATERMARK) {
-              if (!this.activeTransfers.has(transfer.id) || activeDc.readyState !== 'open') break;
-              await new Promise((r) => setTimeout(r, 8));
-            }
+        let nextEncrypted: Promise<ArrayBuffer> | null = null;
+        if (totalChunks > 0) {
+          nextEncrypted = readSlice(0).then((buf) => cryptoWorker.encrypt(aesKey, buf));
+        }
 
-            const start = chunkIdx * CHUNK_SIZE;
-            const end = Math.min(start + CHUNK_SIZE, file.size);
-            const sliceBuffer = await file.slice(start, end).arrayBuffer();
-            const encrypted = await WebCryptoEngine.encryptChunk(aesKey, sliceBuffer);
-
-            const packet = new Uint8Array(8 + encrypted.byteLength);
-            const dv = new DataView(packet.buffer);
-            dv.setUint32(0, chunkIdx, true);
-            dv.setUint32(4, totalChunks, true);
-            packet.set(new Uint8Array(encrypted), 8);
-            activeDc.send(packet.buffer);
-
-            bytesSent += (end - start);
-
-            const elapsedSec = (Date.now() - startTime) / 1000;
-            const speedMBps = elapsedSec > 0 ? (bytesSent / (1024 * 1024)) / elapsedSec : 0;
-            const etaSeconds = speedMBps > 0 ? (file.size - bytesSent) / (speedMBps * 1024 * 1024) : 0;
-            onProgress(Math.min(100, Math.round((bytesSent / file.size) * 100)), speedMBps, etaSeconds, chunkIdx + 1);
+        for (let chunkIdx = 0; chunkIdx < totalChunks; chunkIdx++) {
+          if (!this.activeTransfers.has(transfer.id)) {
+            throw new Error('Transfer cancelled by user');
+          }
+          if (activeDc.readyState !== 'open') {
+            throw new Error('DataChannel closed');
           }
 
-          resolveTransfer();
-        });
+          // Wait for backpressure to drain
+          while (activeDc.bufferedAmount > HIGH_WATERMARK) {
+            if (!this.activeTransfers.has(transfer.id) || activeDc.readyState !== 'open') break;
+            await new Promise((r) => setTimeout(r, 10));
+          }
 
-        // Drain any remaining buffered bytes before sending TRANSFER_COMPLETE
-        for (let i = 0; i < 200; i++) {
+          // Get currently-ready encrypted chunk
+          const encrypted = await nextEncrypted!;
+
+          // Kick off encryption of NEXT chunk in parallel while we send this one
+          if (chunkIdx + 1 < totalChunks) {
+            nextEncrypted = readSlice(chunkIdx + 1).then((buf) => cryptoWorker.encrypt(aesKey, buf));
+          }
+
+          // Build and send packet: [4B chunkIdx LE][4B totalChunks LE][encrypted payload]
+          const packet = new Uint8Array(8 + encrypted.byteLength);
+          const dv = new DataView(packet.buffer);
+          dv.setUint32(0, chunkIdx, true);
+          dv.setUint32(4, totalChunks, true);
+          packet.set(new Uint8Array(encrypted), 8);
+          activeDc.send(packet.buffer);
+
+          const chunkRawSize = Math.min(CHUNK_SIZE, file.size - chunkIdx * CHUNK_SIZE);
+          bytesSent += chunkRawSize;
+
+          const elapsedSec = (Date.now() - startTime) / 1000;
+          const speedMBps = elapsedSec > 0 ? bytesSent / (1024 * 1024) / elapsedSec : 0;
+          const etaSeconds = speedMBps > 0 ? (file.size - bytesSent) / (speedMBps * 1024 * 1024) : 0;
+          onProgress(Math.min(100, Math.round((bytesSent / file.size) * 100)), speedMBps, etaSeconds, chunkIdx + 1);
+        }
+
+        // Wait for socket to fully drain before signaling complete
+        for (let i = 0; i < 300; i++) {
           if (!this.activeTransfers.has(transfer.id)) break;
           if (activeDc.bufferedAmount === 0) break;
           await new Promise((r) => setTimeout(r, 50));
         }
-        await new Promise((r) => setTimeout(r, 100));
+        await new Promise((r) => setTimeout(r, 200));
 
       } else {
         // ════════════════════════════════════════════════════════
@@ -467,7 +544,6 @@ export class WebRTCManager {
           const etaSeconds = speedMBps > 0 ? (file.size - bytesSent) / (speedMBps * 1024 * 1024) : 0;
           onProgress(Math.min(100, Math.round((bytesSent / file.size) * 100)), speedMBps, etaSeconds, chunkIdx + 1);
 
-          // Yield event loop every 8 chunks so the tab stays responsive
           if (chunkIdx % 8 === 0) await new Promise((r) => setTimeout(r, 0));
         }
       }
@@ -485,6 +561,7 @@ export class WebRTCManager {
       onError(e?.message || 'File transfer stream failed');
     } finally {
       this.activeTransfers.delete(transfer.id);
+      cryptoWorker.terminate();
     }
   }
 }
