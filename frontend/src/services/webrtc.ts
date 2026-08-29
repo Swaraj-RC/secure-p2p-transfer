@@ -185,7 +185,6 @@ export class WebRTCManager {
   public async establishDataChannel(targetPeerId: string, transferId: string): Promise<RTCDataChannel | null> {
     return new Promise(async (resolve) => {
       try {
-        // Reuse existing open channel
         const existing = this.dataChannels.get(targetPeerId);
         if (existing && existing.readyState === 'open') {
           resolve(existing);
@@ -196,23 +195,29 @@ export class WebRTCManager {
 
         const dc = pc.createDataChannel(`slrv-${transferId}`, {
           ordered: true,
-          maxRetransmits: undefined, // Reliable — no packet loss
         });
         this.registerDataChannel(targetPeerId, dc);
 
+        let isResolved = false;
         const openTimer = setTimeout(() => {
-          console.warn('[WebRTC] DataChannel open timed out — will use relay fallback');
-          resolve(null);
+          if (!isResolved) {
+            isResolved = true;
+            console.warn('[WebRTC] DataChannel negotiation timed out. Falling back to relay.');
+            resolve(null);
+          }
         }, 15000);
 
         dc.onopen = () => {
-          clearTimeout(openTimer);
-          resolve(dc);
+          if (!isResolved) {
+            isResolved = true;
+            clearTimeout(openTimer);
+            console.log('[WebRTC] DataChannel successfully OPENED!');
+            resolve(dc);
+          }
         };
 
-        dc.onerror = () => {
-          clearTimeout(openTimer);
-          resolve(null);
+        dc.onerror = (e) => {
+          console.warn('[WebRTC] DataChannel error during open:', e);
         };
 
         const offer = await pc.createOffer();
@@ -279,14 +284,6 @@ export class WebRTCManager {
     }
   }
 
-  /**
-   * SEND FILE — Reliable single-channel pump with backpressure and watchdog
-   * Fixes:
-   * 1. Proper await-based backpressure (no lost callbacks)
-   * 2. Watchdog timer to detect and recover from stalls
-   * 3. TURN server fallback for NAT-blocked connections
-   * 4. Relay fallback that doesn't block the main thread
-   */
   public async sendFile(
     file: File,
     targetPeerId: string,
@@ -306,10 +303,7 @@ export class WebRTCManager {
       const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
       const fileHash = `sha256-${Date.now().toString(16)}-${file.size.toString(16)}`;
 
-      // Start opening DataChannel immediately in parallel
-      const dcPromise = this.establishDataChannel(targetPeerId, transfer.id);
-
-      // Send transfer request
+      // 1. Send transfer request
       signalingClient.send({
         type: 'TRANSFER_REQUEST',
         targetId: targetPeerId,
@@ -328,7 +322,10 @@ export class WebRTCManager {
         },
       });
 
-      // Wait for acceptance (60s timeout)
+      // 2. Start pre-negotiating DataChannel immediately
+      const dcPromise = this.establishDataChannel(targetPeerId, transfer.id);
+
+      // 3. Wait for recipient acceptance (60s timeout)
       const accepted = await new Promise<boolean>((resolve) => {
         let resolved = false;
         const timeout = setTimeout(() => { if (!resolved) { resolved = true; resolve(false); } }, 60000);
@@ -356,16 +353,21 @@ export class WebRTCManager {
       if (!this.activeTransfers.has(transfer.id)) { onError('Transfer cancelled by user'); return; }
       if (!accepted) { onError('Transfer rejected or timed out'); return; }
 
-      // Get DataChannel (may be open by now after handshake completed)
-      const dc = await dcPromise;
-      const isDirectP2P = dc !== null && dc.readyState === 'open';
+      // 4. Ensure DataChannel is ready
+      let dc = await dcPromise;
+      if (!dc || dc.readyState !== 'open') {
+        // Try establishing one more time if needed
+        dc = await this.establishDataChannel(targetPeerId, transfer.id);
+      }
 
+      const activeDc = dc;
+      const isDirectP2P = activeDc !== null && activeDc.readyState === 'open';
       console.log(`[WebRTC] Transfer mode: ${isDirectP2P ? 'DIRECT P2P DataChannel' : 'Relay Fallback'}`);
 
       const startTime = Date.now();
       let bytesSent = 0;
 
-      if (isDirectP2P) {
+      if (isDirectP2P && activeDc) {
         // ════════════════════════════════════════════════════════
         // DIRECT P2P: Await-based backpressure pump (no lost callbacks)
         // ════════════════════════════════════════════════════════
@@ -394,25 +396,25 @@ export class WebRTCManager {
               return;
             }
 
-            if (dc.readyState !== 'open') {
+            if (activeDc.readyState !== 'open') {
               clearTimeout(watchdogTimer);
               rejectTransfer(new Error('DataChannel closed unexpectedly'));
               return;
             }
 
             // Proper await-based backpressure — NEVER loses the resume signal
-            if (dc.bufferedAmount > HIGH_WATERMARK) {
+            if (activeDc.bufferedAmount > HIGH_WATERMARK) {
               await new Promise<void>((resume) => {
-                const prevThreshold = dc.bufferedAmountLowThreshold;
-                dc.bufferedAmountLowThreshold = LOW_WATERMARK;
+                const prevThreshold = activeDc.bufferedAmountLowThreshold;
+                activeDc.bufferedAmountLowThreshold = LOW_WATERMARK;
                 const onLow = () => {
-                  dc.removeEventListener('bufferedamountlow', onLow);
-                  dc.bufferedAmountLowThreshold = prevThreshold;
+                  activeDc.removeEventListener('bufferedamountlow', onLow);
+                  activeDc.bufferedAmountLowThreshold = prevThreshold;
                   resume();
                 };
-                dc.addEventListener('bufferedamountlow', onLow);
+                activeDc.addEventListener('bufferedamountlow', onLow);
                 // Safety: if event never fires (channel stalls), resume after 5s
-                setTimeout(() => { dc.removeEventListener('bufferedamountlow', onLow); resume(); }, 5000);
+                setTimeout(() => { activeDc.removeEventListener('bufferedamountlow', onLow); resume(); }, 5000);
               });
             }
 
@@ -426,7 +428,7 @@ export class WebRTCManager {
             dv.setUint32(0, chunkIdx, true);
             dv.setUint32(4, totalChunks, true);
             packet.set(new Uint8Array(encrypted), 8);
-            dc.send(packet.buffer);
+            activeDc.send(packet.buffer);
 
             bytesSent += (end - start);
             lastProgressChunk = chunkIdx;
@@ -445,7 +447,7 @@ export class WebRTCManager {
         // Drain all pending data in the DataChannel before signaling complete
         for (let i = 0; i < 120; i++) {
           if (!this.activeTransfers.has(transfer.id)) break;
-          if (dc.bufferedAmount === 0) break;
+          if (activeDc.bufferedAmount === 0) break;
           await new Promise((r) => setTimeout(r, 50));
         }
         await new Promise((r) => setTimeout(r, 200));

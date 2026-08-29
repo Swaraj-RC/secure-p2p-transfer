@@ -13,14 +13,21 @@ export class SignalingClient {
   private onConnectionChangeCallback?: (connected: boolean) => void;
 
   constructor(url?: string) {
-    const defaultProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.host;
+    const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
+    const defaultProtocol = isHttps ? 'wss:' : 'ws:';
+    const host = typeof window !== 'undefined' ? window.location.host : 'localhost:8080';
     const isVercel = typeof window !== 'undefined' && window.location.host.includes('vercel.app');
     const defaultRenderUrl = 'wss://slrv-beam-signaling.onrender.com/ws';
     const envUrl = (import.meta as any).env?.VITE_SIGNALING_SERVER_URL;
-    const storedUrl = typeof window !== 'undefined' ? localStorage.getItem('SLRV_SIGNALING_URL') : null;
+    let storedUrl = typeof window !== 'undefined' ? localStorage.getItem('SLRV_SIGNALING_URL') : null;
 
-    this.url = url || storedUrl || envUrl || (isVercel ? defaultRenderUrl : `${defaultProtocol}//${host}/ws`);
+    // Sanitize stored URL: if on HTTPS, reject insecure ws:// or localhost overrides
+    if (storedUrl && isHttps && (storedUrl.startsWith('ws://') || storedUrl.includes('localhost'))) {
+      storedUrl = null;
+      try { localStorage.removeItem('SLRV_SIGNALING_URL'); } catch {}
+    }
+
+    this.url = url || storedUrl || envUrl || (isVercel || isHttps ? defaultRenderUrl : `${defaultProtocol}//${host}/ws`);
   }
 
   public getUrl(): string {
