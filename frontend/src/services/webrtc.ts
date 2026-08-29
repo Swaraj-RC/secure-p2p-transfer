@@ -328,23 +328,45 @@ export class WebRTCManager {
       // 3. Wait for recipient acceptance (60s timeout)
       const accepted = await new Promise<boolean>((resolve) => {
         let resolved = false;
-        const timeout = setTimeout(() => { if (!resolved) { resolved = true; resolve(false); } }, 60000);
+        let unbindAccept: () => void = () => {};
+        let unbindReject: () => void = () => {};
+        let unbindCancel: () => void = () => {};
 
-        const unbindAccept = signalingClient.on('TRANSFER_ACCEPT', (msg) => {
+        const timeout = setTimeout(() => {
+          if (!resolved) {
+            resolved = true;
+            cleanup();
+            resolve(false);
+          }
+        }, 60000);
+
+        const cleanup = () => {
+          clearTimeout(timeout);
+          try { unbindAccept(); } catch {}
+          try { unbindReject(); } catch {}
+          try { unbindCancel(); } catch {}
+        };
+
+        unbindAccept = signalingClient.on('TRANSFER_ACCEPT', (msg) => {
           if (msg.payload?.transferId === transfer.id && !resolved) {
-            resolved = true; clearTimeout(timeout); unbindAccept(); unbindReject(); unbindCancel();
+            resolved = true;
+            cleanup();
             resolve(true);
           }
         });
-        const unbindReject = signalingClient.on('TRANSFER_REJECT', (msg) => {
+
+        unbindReject = signalingClient.on('TRANSFER_REJECT', (msg) => {
           if (msg.payload?.transferId === transfer.id && !resolved) {
-            resolved = true; clearTimeout(timeout); unbindAccept(); unbindReject(); unbindCancel();
+            resolved = true;
+            cleanup();
             resolve(false);
           }
         });
-        const unbindCancel = signalingClient.on('TRANSFER_CANCEL', (msg) => {
+
+        unbindCancel = signalingClient.on('TRANSFER_CANCEL', (msg) => {
           if (msg.payload?.transferId === transfer.id && !resolved) {
-            resolved = true; clearTimeout(timeout); unbindAccept(); unbindReject(); unbindCancel();
+            resolved = true;
+            cleanup();
             resolve(false);
           }
         });

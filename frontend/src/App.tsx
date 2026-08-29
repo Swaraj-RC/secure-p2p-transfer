@@ -437,7 +437,7 @@ export const App: React.FC = () => {
         speedMBps: 0,
         etaSeconds: 0,
         chunksCompleted: 0,
-        totalChunks: Math.ceil(file.size / (64 * 1024)),
+        totalChunks: Math.ceil(file.size / CHUNK_SIZE),
         startedAt: Date.now(),
         batchId,
         batchIndex: i + 1,
