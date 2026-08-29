@@ -50,6 +50,7 @@ export const App: React.FC = () => {
   // Batch transfer management refs
   const isBatchCancelledRef = useRef<boolean>(false);
   const autoAcceptedBatches = useRef<Set<string>>(new Set());
+  const lastUiUpdateRef = useRef<number>(0);
 
   // Incoming chunk assembly buffers
   const receivingBuffers = useRef<Map<string, { chunks: ArrayBuffer[]; meta: any; key: CryptoKey; receivedBytes: number; startTime: number; receivedCount: number }>>(
@@ -123,11 +124,15 @@ export const App: React.FC = () => {
             session.receivedBytes += decryptedChunk.byteLength;
             session.receivedCount++;
 
-            // Stream directly to physical disk via OPFS (Zero-RAM Memory Protection)
-            OPFSEngine.writeChunk(tId, chunkIndex * (64 * 1024), decryptedChunk);
+            const chunkSize = session.meta.chunkSize || (256 * 1024);
 
-            // Record local client-side checkpoint in IndexedDB
-            ResumableEngine.recordChunk(tId, chunkIndex, _totalChunks, session.meta);
+            // Stream directly to physical disk via OPFS (Zero-RAM Memory Protection)
+            OPFSEngine.writeChunk(tId, chunkIndex * chunkSize, decryptedChunk);
+
+            // Batched local client-side checkpoint in IndexedDB (prevents I/O freezing)
+            if (session.receivedCount % 40 === 0 || session.receivedCount >= _totalChunks) {
+              ResumableEngine.recordChunk(tId, chunkIndex, _totalChunks, session.meta);
+            }
 
             const elapsedSec = (Date.now() - session.startTime) / 1000;
             const speedMBps = elapsedSec > 0 ? session.receivedBytes / (1024 * 1024) / elapsedSec : 0;
@@ -135,17 +140,22 @@ export const App: React.FC = () => {
             const remainingBytes = session.meta.fileSize - session.receivedBytes;
             const etaSeconds = speedMBps > 0 ? remainingBytes / (speedMBps * 1024 * 1024) : 0;
 
-            setActiveTransfer((prev) => {
-              if (!prev || prev.id !== tId) return prev;
-              return {
-                ...prev,
-                progress,
-                bytesTransferred: session.receivedBytes,
-                speedMBps,
-                etaSeconds,
-                chunksCompleted: session.receivedCount,
-              };
-            });
+            // Throttled UI telemetry update (60fps smooth render without event loop starvation)
+            const now = Date.now();
+            if (now - lastUiUpdateRef.current > 40 || session.receivedCount >= _totalChunks) {
+              lastUiUpdateRef.current = now;
+              setActiveTransfer((prev) => {
+                if (!prev || prev.id !== tId) return prev;
+                return {
+                  ...prev,
+                  progress,
+                  bytesTransferred: session.receivedBytes,
+                  speedMBps,
+                  etaSeconds,
+                  chunksCompleted: session.receivedCount,
+                };
+              });
+            }
           }
         } catch (err) {
           console.error('Binary chunk decrypt error:', err);
@@ -171,11 +181,15 @@ export const App: React.FC = () => {
           session.receivedBytes += decryptedChunk.byteLength;
           session.receivedCount++;
 
-          // Stream directly to physical disk via OPFS
-          OPFSEngine.writeChunk(transferId, chunkIndex * (64 * 1024), decryptedChunk);
+          const chunkSize = session.meta.chunkSize || (256 * 1024);
 
-          // Record local client-side checkpoint in IndexedDB
-          ResumableEngine.recordChunk(transferId, chunkIndex, totalChunks, session.meta);
+          // Stream directly to physical disk via OPFS
+          OPFSEngine.writeChunk(transferId, chunkIndex * chunkSize, decryptedChunk);
+
+          // Batched local client-side checkpoint in IndexedDB
+          if (session.receivedCount % 40 === 0 || session.receivedCount >= totalChunks) {
+            ResumableEngine.recordChunk(transferId, chunkIndex, totalChunks, session.meta);
+          }
 
           const elapsedSec = (Date.now() - session.startTime) / 1000;
           const speedMBps = elapsedSec > 0 ? session.receivedBytes / (1024 * 1024) / elapsedSec : 0;
@@ -183,17 +197,21 @@ export const App: React.FC = () => {
           const remainingBytes = session.meta.fileSize - session.receivedBytes;
           const etaSeconds = speedMBps > 0 ? remainingBytes / (speedMBps * 1024 * 1024) : 0;
 
-          setActiveTransfer((prev) => {
-            if (!prev || prev.id !== transferId) return prev;
-            return {
-              ...prev,
-              progress,
-              bytesTransferred: session.receivedBytes,
-              speedMBps,
-              etaSeconds,
-              chunksCompleted: session.receivedCount,
-            };
-          });
+          const now = Date.now();
+          if (now - lastUiUpdateRef.current > 40 || session.receivedCount >= totalChunks) {
+            lastUiUpdateRef.current = now;
+            setActiveTransfer((prev) => {
+              if (!prev || prev.id !== transferId) return prev;
+              return {
+                ...prev,
+                progress,
+                bytesTransferred: session.receivedBytes,
+                speedMBps,
+                etaSeconds,
+                chunksCompleted: session.receivedCount,
+              };
+            });
+          }
         }
       } catch (err) {
         console.error('Error decrypting chunk #', chunkIndex, err);

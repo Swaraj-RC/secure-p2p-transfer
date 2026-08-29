@@ -14,11 +14,11 @@ const RTC_CONFIG: RTCConfiguration = {
   iceCandidatePoolSize: 10,
 };
 
-// MAXIMUM HARDWARE LINE-RATE SPEED CONFIG (Event-Driven Continuous SCTP Pump)
-const CHUNK_SIZE = 64 * 1024;  // 64 KB universal WebRTC SCTP packet size (100% reliable across all browsers)
-const HIGH_WATERMARK = 4 * 1024 * 1024; // 4 MB socket window
-const LOW_WATERMARK = 512 * 1024;       // 512 KB trigger watermark
-const PARALLEL_STREAMS = 8;             // 8 Parallel SCTP DataChannels
+// MAXIMUM HARDWARE LINE-RATE SPEED CONFIG (Optimized SCTP Pump)
+export const CHUNK_SIZE = 256 * 1024;  // 256 KB optimal WebRTC SCTP frame size (4x fewer crypto/event-loop operations)
+const HIGH_WATERMARK = 16 * 1024 * 1024; // 16 MB socket backpressure window
+const LOW_WATERMARK = 2 * 1024 * 1024;   // 2 MB resume trigger
+const PARALLEL_STREAMS = 4;              // 4 High-Throughput SCTP DataChannels
 
 export class WebRTCManager {
   private peerConnections: Map<string, RTCPeerConnection> = new Map();
@@ -173,7 +173,7 @@ export class WebRTCManager {
     this.binaryChunkListeners.delete(peerId);
   }
 
-  // Pre-warm 8 Parallel WebRTC DataChannels
+  // Pre-warm High-Speed Parallel WebRTC DataChannels
   public async establishMultiDataChannels(targetPeerId: string, transferId: string): Promise<RTCDataChannel[]> {
     return new Promise(async (resolve) => {
       try {
@@ -196,10 +196,11 @@ export class WebRTCManager {
           createdChannels.push(dc);
         }
 
+        // Wait up to 12s for DataChannels to open during handshake
         const timeout = setTimeout(() => {
           const openList = createdChannels.filter((c) => c.readyState === 'open');
           resolve(openList);
-        }, 4000);
+        }, 12000);
 
         const checkOpen = () => {
           const openList = createdChannels.filter((c) => c.readyState === 'open');
