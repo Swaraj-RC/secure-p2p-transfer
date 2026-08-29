@@ -1,7 +1,8 @@
 import React, { useState, useRef } from 'react';
-import { UploadCloud, Shield, FileCheck, X, Laptop, Smartphone, Globe, Radio, Terminal, Plus, Trash2, Layers } from 'lucide-react';
+import { UploadCloud, Shield, FileCheck, X, Laptop, Smartphone, Globe, Radio, Terminal, Plus, Trash2, Layers, FolderPlus, Folder } from 'lucide-react';
 import { Device } from '../types';
 import { soundFX } from '../services/sound';
+import { FolderScanner, ScannedFolderFile } from '../utils/folder';
 
 interface SendModalProps {
   isOpen: boolean;
@@ -22,20 +23,30 @@ export const SendModal: React.FC<SendModalProps> = ({
   const [customIpAddress, setCustomIpAddress] = useState<string>('');
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
 
   if (!isOpen) return null;
 
-  const handleFileDrop = (e: React.DragEvent) => {
+  const handleFileDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      const dropped = Array.from(e.dataTransfer.files);
-      setSelectedFiles((prev) => {
-        const existingNames = new Set(prev.map((f) => `${f.name}-${f.size}-${f.lastModified}`));
-        const uniqueNew = dropped.filter((f) => !existingNames.has(`${f.name}-${f.size}-${f.lastModified}`));
-        return [...prev, ...uniqueNew];
-      });
-      soundFX.playClick();
+    try {
+      const scanned: ScannedFolderFile[] = await FolderScanner.scanDropEvent(e);
+      if (scanned.length > 0) {
+        const droppedFiles = scanned.map((s) => s.file);
+        setSelectedFiles((prev) => {
+          const existingNames = new Set(prev.map((f) => `${f.name}-${f.size}-${f.lastModified}`));
+          const uniqueNew = droppedFiles.filter((f) => !existingNames.has(`${f.name}-${f.size}-${f.lastModified}`));
+          return [...prev, ...uniqueNew];
+        });
+        soundFX.playClick();
+      }
+    } catch {
+      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        const dropped = Array.from(e.dataTransfer.files);
+        setSelectedFiles((prev) => [...prev, ...dropped]);
+        soundFX.playClick();
+      }
     }
   };
 
@@ -72,7 +83,33 @@ export const SendModal: React.FC<SendModalProps> = ({
   };
 
   const totalBytes = selectedFiles.reduce((acc, f) => acc + f.size, 0);
-  const effectiveTargetId = targetMode === 'direct' ? customIpAddress.trim() : selectedPeerId;
+
+  // Intelligent Peer Matching for 6-Digit Codes (#8518), Node Names, IPs, or Prefixes
+  const cleanInput = customIpAddress.trim().replace(/^#/, '').toLowerCase();
+  const matchedDirectPeer = cleanInput
+    ? peers.find((p) => {
+        const pId = p.id.toLowerCase();
+        const pCleanId = pId.replace(/-/g, '');
+        const inputClean = cleanInput.replace(/-/g, '');
+        const pName = p.name.toLowerCase();
+        return (
+          pId === cleanInput ||
+          pId.startsWith(cleanInput) ||
+          pCleanId.startsWith(inputClean) ||
+          pName === cleanInput ||
+          pName.includes(cleanInput) ||
+          p.ipAddress === customIpAddress.trim() ||
+          p.localIp === customIpAddress.trim()
+        );
+      })
+    : null;
+
+  const effectiveTargetId =
+    targetMode === 'direct'
+      ? matchedDirectPeer
+        ? matchedDirectPeer.id
+        : customIpAddress.trim()
+      : selectedPeerId;
 
   const handleSubmit = () => {
     if (selectedFiles.length === 0 || !effectiveTargetId) return;
@@ -101,10 +138,20 @@ export const SendModal: React.FC<SendModalProps> = ({
           </button>
         </div>
 
-        {/* 1. Drag & Drop File Zone / Multiple File Staging Deck */}
+        {/* 1. Drag & Drop File & Folder Zone / Multiple File Staging Deck */}
         <input
           type="file"
           ref={fileInputRef}
+          multiple
+          style={{ display: 'none' }}
+          onChange={handleFileSelect}
+        />
+        <input
+          type="file"
+          ref={folderInputRef}
+          // @ts-ignore
+          webkitdirectory=""
+          directory=""
           multiple
           style={{ display: 'none' }}
           onChange={handleFileSelect}
@@ -123,10 +170,32 @@ export const SendModal: React.FC<SendModalProps> = ({
           >
             <UploadCloud size={40} color="var(--hud-orange)" />
             <div style={{ color: '#fff', fontSize: '0.95rem', letterSpacing: '0.1em' }}>
-              DRAG & DROP <span style={{ color: 'var(--hud-orange)' }}>ONE OR MULTIPLE FILES</span> OR BROWSE
+              DRAG & DROP <span style={{ color: 'var(--hud-orange)' }}>FILES OR FULL FOLDERS</span>
             </div>
             <div style={{ color: 'var(--hud-text-dim)', fontSize: '0.75rem' }}>
-              SUPPORTS BATCH TRANSMISSIONS • AUTOMATIC AES-256-GCM CHUNKING
+              SUPPORTS NESTED DIRECTORIES • DIRECT-TO-DISK OPFS • AES-256-GCM
+            </div>
+            <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.25rem' }}>
+              <button
+                className="hud-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  fileInputRef.current?.click();
+                }}
+                style={{ padding: '0.35rem 0.85rem', fontSize: '0.7rem' }}
+              >
+                + BROWSE FILES
+              </button>
+              <button
+                className="hud-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  folderInputRef.current?.click();
+                }}
+                style={{ padding: '0.35rem 0.85rem', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+              >
+                <FolderPlus size={13} color="var(--hud-orange)" /> + BROWSE FOLDER
+              </button>
             </div>
           </div>
         ) : (
@@ -149,7 +218,7 @@ export const SendModal: React.FC<SendModalProps> = ({
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--hud-orange)', fontSize: '0.85rem', fontWeight: 600 }}>
                 <Layers size={16} />
-                <span>STAGED FILES ({selectedFiles.length}) • TOTAL: {formatFileSize(totalBytes)}</span>
+                <span>STAGED PAYLOAD ({selectedFiles.length}) • TOTAL: {formatFileSize(totalBytes)}</span>
               </div>
               <div style={{ display: 'flex', gap: '0.5rem' }}>
                 <button
@@ -157,7 +226,14 @@ export const SendModal: React.FC<SendModalProps> = ({
                   onClick={() => fileInputRef.current?.click()}
                   style={{ padding: '0.35rem 0.75rem', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
                 >
-                  <Plus size={12} /> ADD MORE
+                  <Plus size={12} /> ADD FILES
+                </button>
+                <button
+                  className="hud-btn"
+                  onClick={() => folderInputRef.current?.click()}
+                  style={{ padding: '0.35rem 0.75rem', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+                >
+                  <FolderPlus size={12} /> ADD FOLDER
                 </button>
                 <button
                   className="hud-btn"
@@ -274,9 +350,30 @@ export const SendModal: React.FC<SendModalProps> = ({
                   autoFocus
                 />
               </div>
+
+              {matchedDirectPeer && (
+                <div
+                  style={{
+                    marginTop: '0.4rem',
+                    padding: '0.35rem 0.6rem',
+                    background: 'rgba(0, 255, 136, 0.08)',
+                    border: '1px solid var(--hud-green)',
+                    color: 'var(--hud-green)',
+                    fontSize: '0.75rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.4rem',
+                  }}
+                >
+                  <span>🎯 TARGET LOCKED:</span>
+                  <strong>{matchedDirectPeer.name}</strong>
+                  <span>(#{matchedDirectPeer.id.slice(0, 6).toUpperCase()})</span>
+                </div>
+              )}
+
               <div style={{ fontSize: '0.7rem', color: 'var(--hud-text-dim)', marginTop: '0.4rem', display: 'flex', justifyContent: 'space-between' }}>
                 <span>🎯 DIRECT ROUTING: Privacy-first end-to-end encrypted transfer</span>
-                {peers.length > 0 && (
+                {peers.length > 0 && !matchedDirectPeer && (
                   <span
                     style={{ color: 'var(--hud-orange)', cursor: 'pointer', textDecoration: 'underline' }}
                     onClick={() => {

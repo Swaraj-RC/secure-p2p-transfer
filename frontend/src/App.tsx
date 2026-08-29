@@ -13,6 +13,8 @@ import { signalingClient } from './services/signaling';
 
 import { webrtcManager, WebRTCManager } from './services/webrtc';
 import { WebCryptoEngine } from './services/crypto';
+import { OPFSEngine } from './services/opfs';
+import { ResumableEngine } from './services/resumable';
 
 import { soundFX } from './services/sound';
 import { Device, TransferItem } from './types';
@@ -121,6 +123,12 @@ export const App: React.FC = () => {
             session.receivedBytes += decryptedChunk.byteLength;
             session.receivedCount++;
 
+            // Stream directly to physical disk via OPFS (Zero-RAM Memory Protection)
+            OPFSEngine.writeChunk(tId, chunkIndex * (64 * 1024), decryptedChunk);
+
+            // Record local client-side checkpoint in IndexedDB
+            ResumableEngine.recordChunk(tId, chunkIndex, _totalChunks, session.meta);
+
             const elapsedSec = (Date.now() - session.startTime) / 1000;
             const speedMBps = elapsedSec > 0 ? session.receivedBytes / (1024 * 1024) / elapsedSec : 0;
             const progress = Math.min(100, Math.round((session.receivedBytes / session.meta.fileSize) * 100));
@@ -163,6 +171,12 @@ export const App: React.FC = () => {
           session.receivedBytes += decryptedChunk.byteLength;
           session.receivedCount++;
 
+          // Stream directly to physical disk via OPFS
+          OPFSEngine.writeChunk(transferId, chunkIndex * (64 * 1024), decryptedChunk);
+
+          // Record local client-side checkpoint in IndexedDB
+          ResumableEngine.recordChunk(transferId, chunkIndex, totalChunks, session.meta);
+
           const elapsedSec = (Date.now() - session.startTime) / 1000;
           const speedMBps = elapsedSec > 0 ? session.receivedBytes / (1024 * 1024) / elapsedSec : 0;
           const progress = Math.min(100, Math.round((session.receivedBytes / session.meta.fileSize) * 100));
@@ -195,20 +209,25 @@ export const App: React.FC = () => {
       if (!session) return;
 
       // Wait for all in-flight chunks to arrive before building Blob
-      const finalizeAssembly = () => {
+      const finalizeAssembly = async () => {
         try {
           const resolvedMime = WebRTCManager.getMimeType(session.meta.fileName, session.meta.mimeType);
-          const validChunks: ArrayBuffer[] = [];
-          for (let i = 0; i < session.meta.totalChunks; i++) {
-            if (session.chunks[i]) {
-              validChunks.push(session.chunks[i]);
-            } else {
-              console.warn(`Chunk #${i} missing during assembly for transfer ${transferId}!`);
-            }
-          }
+          let blobUrl: string | undefined;
 
-          const fullBlob = new Blob(validChunks, { type: resolvedMime });
-          const blobUrl = URL.createObjectURL(fullBlob);
+          // Attempt Direct-to-Disk OPFS finalize (Zero-RAM consumption)
+          const opfsResult = await OPFSEngine.finalizeBlob(transferId, resolvedMime);
+          if (opfsResult) {
+            blobUrl = opfsResult.blobUrl;
+          } else {
+            const validChunks: ArrayBuffer[] = [];
+            for (let i = 0; i < session.meta.totalChunks; i++) {
+              if (session.chunks[i]) {
+                validChunks.push(session.chunks[i]);
+              }
+            }
+            const fullBlob = new Blob(validChunks, { type: resolvedMime });
+            blobUrl = URL.createObjectURL(fullBlob);
+          }
 
           // Instant Zero-Delay Auto-Download to user's disk!
           try {
@@ -255,6 +274,7 @@ export const App: React.FC = () => {
           setTransferHistory((prev) => [updatedItem, ...prev]);
           soundFX.playSuccess();
           receivingBuffers.current.delete(transferId);
+          ResumableEngine.clearCheckpoint(transferId);
         } catch (err) {
           console.error('Error assembling completed file:', err);
         }
@@ -283,6 +303,7 @@ export const App: React.FC = () => {
         receivingBuffers.current.delete(transferId);
       }
       webrtcManager.cancelTransfer(transferId);
+      OPFSEngine.cleanup(transferId);
 
       setActiveTransfer((prev) => {
         if (!prev || prev.id !== transferId) return prev;
@@ -314,6 +335,9 @@ export const App: React.FC = () => {
     }
 
     const key = await WebCryptoEngine.importKeyFromHex(req.encryptionKey);
+
+    // Initialize Direct-to-Disk OPFS file handle
+    await OPFSEngine.initFile(req.transferId, req.fileName);
 
     receivingBuffers.current.set(req.transferId, {
       chunks: new Array(req.totalChunks),

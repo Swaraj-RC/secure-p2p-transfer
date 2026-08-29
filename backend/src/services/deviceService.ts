@@ -40,24 +40,33 @@ export class DeviceService {
 
   public findDevice(identifier: string): Device | undefined {
     if (!identifier) return undefined;
-    const cleanId = identifier.trim();
+    const rawTrimmed = identifier.trim();
+    const cleanId = rawTrimmed.replace(/^#/, '').toLowerCase();
+    const cleanIdNoDash = cleanId.replace(/-/g, '');
 
-    // 1. Exact ID match
-    if (this.devices.has(cleanId)) {
-      return this.devices.get(cleanId);
-    }
-
-    // 2. Search by IP address, local IP, name, or ID prefix
+    // 1. Search online devices with multi-criteria matching
     for (const device of this.devices.values()) {
       if (!device.isOnline) continue;
+      const devId = device.id.toLowerCase();
+      const devIdNoDash = devId.replace(/-/g, '');
+      const devName = device.name.toLowerCase();
+
       if (
-        device.ipAddress === cleanId ||
-        device.localIp === cleanId ||
-        device.id.startsWith(cleanId) ||
-        device.name.toLowerCase() === cleanId.toLowerCase()
+        devId === cleanId ||
+        devId.startsWith(cleanId) ||
+        devIdNoDash.startsWith(cleanIdNoDash) ||
+        devName === cleanId ||
+        devName.includes(cleanId) ||
+        device.ipAddress === rawTrimmed ||
+        device.localIp === rawTrimmed
       ) {
         return device;
       }
+    }
+
+    // 2. Exact ID map match
+    if (this.devices.has(rawTrimmed)) {
+      return this.devices.get(rawTrimmed);
     }
 
     return undefined;
