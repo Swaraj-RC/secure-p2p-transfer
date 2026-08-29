@@ -25,7 +25,7 @@ const RTC_CONFIG: RTCConfiguration = {
 };
 
 export const CHUNK_SIZE = 64 * 1024; // 64 KB — stays under 262144B SCTP max-message-size (64K + 36B overhead = 65572B ✓)
-const HIGH_WATERMARK = 16 * 1024 * 1024; // 16 MB — fill the pipe, drain when full
+const HIGH_WATERMARK = 4 * 1024 * 1024; // 4 MB — back-off well before Chrome's 16MB internal SCTP queue fills
 
 // ─── Off-Main-Thread Crypto Worker ────────────────────────────────────────────
 class CryptoWorkerPool {
@@ -494,13 +494,34 @@ export class WebRTCManager {
             nextEncrypted = readSlice(chunkIdx + 1).then((buf) => cryptoWorker.encrypt(aesKey, buf));
           }
 
-          // Build and send packet: [4B chunkIdx LE][4B totalChunks LE][encrypted payload]
+          // Build packet: [4B chunkIdx LE][4B totalChunks LE][encrypted payload]
           const packet = new Uint8Array(8 + encrypted.byteLength);
           const dv = new DataView(packet.buffer);
           dv.setUint32(0, chunkIdx, true);
           dv.setUint32(4, totalChunks, true);
           packet.set(new Uint8Array(encrypted), 8);
-          activeDc.send(packet.buffer);
+
+          // Re-check bufferedAmount right before send — crypto took time, queue may have grown
+          while (activeDc.bufferedAmount > HIGH_WATERMARK) {
+            if (!this.activeTransfers.has(transfer.id) || activeDc.readyState !== 'open') break;
+            await new Promise((r) => setTimeout(r, 10));
+          }
+
+          // Send with retry on transient queue-full errors
+          let sent = false;
+          for (let attempt = 0; attempt < 50 && !sent; attempt++) {
+            try {
+              activeDc.send(packet.buffer);
+              sent = true;
+            } catch (sendErr: any) {
+              if (sendErr?.message?.includes('queue is full') || sendErr?.message?.includes('send queue')) {
+                await new Promise((r) => setTimeout(r, 20));
+              } else {
+                throw sendErr;
+              }
+            }
+          }
+          if (!sent) throw new Error('DataChannel send queue persistently full — aborting');
 
           const chunkRawSize = Math.min(CHUNK_SIZE, file.size - chunkIdx * CHUNK_SIZE);
           bytesSent += chunkRawSize;
