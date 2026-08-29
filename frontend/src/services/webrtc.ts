@@ -391,43 +391,24 @@ export class WebRTCManager {
 
       if (isDirectP2P && activeDc) {
         // ════════════════════════════════════════════════════════
-        // DIRECT P2P: Await-based backpressure pump (no lost callbacks)
+        // DIRECT P2P: High-Throughput Continuous SCTP Stream
         // ════════════════════════════════════════════════════════
-        let lastProgressChunk = 0;
-        let lastWatchdogChunk = 0;
-        let watchdogTimer: any = null;
-
-        const resetWatchdog = () => {
-          clearTimeout(watchdogTimer);
-          watchdogTimer = setTimeout(() => {
-            if (this.activeTransfers.has(transfer.id) && lastWatchdogChunk === lastProgressChunk) {
-              console.warn('[WebRTC] Stall detected — aborting DataChannel, forcing relay');
-              onError('Transfer stalled. Please retry.');
-            }
-            lastWatchdogChunk = lastProgressChunk;
-          }, 30000);
-        };
-
         await new Promise<void>(async (resolveTransfer, rejectTransfer) => {
-          resetWatchdog();
-
           for (let chunkIdx = 0; chunkIdx < totalChunks; chunkIdx++) {
             if (!this.activeTransfers.has(transfer.id)) {
-              clearTimeout(watchdogTimer);
-              rejectTransfer(new Error('Transfer cancelled'));
+              rejectTransfer(new Error('Transfer cancelled by user'));
               return;
             }
 
             if (activeDc.readyState !== 'open') {
-              clearTimeout(watchdogTimer);
-              rejectTransfer(new Error('DataChannel closed unexpectedly'));
+              rejectTransfer(new Error('DataChannel disconnected'));
               return;
             }
 
-            // Bulletproof Non-Blocking Backpressure: Yield 6ms until buffer drains below ceiling
+            // Non-Blocking Backpressure: Yield if socket buffer reaches high-watermark
             while (activeDc.bufferedAmount > HIGH_WATERMARK) {
               if (!this.activeTransfers.has(transfer.id) || activeDc.readyState !== 'open') break;
-              await new Promise((r) => setTimeout(r, 6));
+              await new Promise((r) => setTimeout(r, 8));
             }
 
             const start = chunkIdx * CHUNK_SIZE;
@@ -443,8 +424,6 @@ export class WebRTCManager {
             activeDc.send(packet.buffer);
 
             bytesSent += (end - start);
-            lastProgressChunk = chunkIdx;
-            resetWatchdog();
 
             const elapsedSec = (Date.now() - startTime) / 1000;
             const speedMBps = elapsedSec > 0 ? (bytesSent / (1024 * 1024)) / elapsedSec : 0;
@@ -452,17 +431,16 @@ export class WebRTCManager {
             onProgress(Math.min(100, Math.round((bytesSent / file.size) * 100)), speedMBps, etaSeconds, chunkIdx + 1);
           }
 
-          clearTimeout(watchdogTimer);
           resolveTransfer();
         });
 
-        // Drain all pending data in the DataChannel before signaling complete
-        for (let i = 0; i < 120; i++) {
+        // Drain any remaining buffered bytes before sending TRANSFER_COMPLETE
+        for (let i = 0; i < 200; i++) {
           if (!this.activeTransfers.has(transfer.id)) break;
           if (activeDc.bufferedAmount === 0) break;
           await new Promise((r) => setTimeout(r, 50));
         }
-        await new Promise((r) => setTimeout(r, 200));
+        await new Promise((r) => setTimeout(r, 100));
 
       } else {
         // ════════════════════════════════════════════════════════
